@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "example-city",
+  "name": "示例城市",
+  "en": "EXAMPLE CITY",
+  "updatedAt": "2026-10-03",
+  "description": "两条示例线路，在中央公园换乘",
+  "center": [1000, 900],
+  "sources": [{ "title": "请替换为该城市运营方资料", "url": "https://example.com/metro" }],
+  "stations": [
+    { "id": "example-west", "name": "西门", "en": "West Gate", "x": 500, "y": 900 },
+    {
+      "id": "example-central",
+      "name": "中央公园",
+      "aliases": ["中央站", "zhongyanggongyuan"],
+      "x": 1000,
+      "y": 900
+    },
+    { "id": "example-east", "name": "东门", "x": 1500, "y": 900 },
+    { "id": "example-south", "name": "南站", "x": 1000, "y": 1400 }
+  ],
+  "lines": [
+    {
+      "id": "example-l1",
+      "name": "1号线",
+      "shortName": "1",
+      "color": "#e64b59",
+      "kind": "metro",
+      "stationIds": ["example-west", "example-central", "example-east"]
+    },
+    {
+      "id": "example-l2",
+      "name": "2号线",
+      "shortName": "2",
+      "color": "#479f85",
+      "kind": "metro",
+      "stationIds": ["example-central", "example-south"]
+    }
+  ],
+  "segments": [
+    {
+      "id": "example-1-west-central",
+      "lineId": "example-l1",
+      "from": "example-west",
+      "to": "example-central",
+      "points": [
+        [500, 900],
+        [1000, 900]
+      ]
+    },
+    {
+      "id": "example-1-central-east",
+      "lineId": "example-l1",
+      "from": "example-central",
+      "to": "example-east",
+      "points": [
+        [1000, 900],
+        [1500, 900]
+      ]
+    },
+    {
+      "id": "example-2-central-south",
+      "lineId": "example-l2",
+      "from": "example-central",
+      "to": "example-south",
+      "points": [
+        [1000, 900],
+        [1000, 1400]
+      ]
+    }
+  ]
+}

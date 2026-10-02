@@ -1,0 +1,85 @@
+import type { CityData } from '../types';
+
+const fail = (message: string): never => {
+  throw new Error(`城市数据格式错误：${message}`);
+};
+const object = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length < 200;
+const point = (v: unknown) =>
+  Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+export function validateCity(value: unknown): CityData {
+  if (
+    !object(value) ||
+    value.schemaVersion !== 1 ||
+    !text(value.id) ||
+    !/^[a-z0-9-]+$/.test(value.id) ||
+    !text(value.name) ||
+    !text(value.en) ||
+    !text(value.updatedAt) ||
+    !text(value.description) ||
+    !point(value.center)
+  )
+    fail('基本信息不完整');
+  const city = value as unknown as CityData;
+  if (![city.stations, city.lines, city.segments, city.sources].every(Array.isArray))
+    fail('缺少 stations、lines、segments 或 sources');
+  if (!city.stations.length || !city.lines.length || !city.segments.length) fail('线网不能为空');
+  const stations = new Set<string>(),
+    lines = new Set<string>(),
+    segments = new Set<string>();
+  for (const s of city.stations) {
+    if (!object(s) || !text(s.id) || !text(s.name) || !point([s.x, s.y]) || stations.has(s.id))
+      fail('站点 ID 重复或坐标无效');
+    if (s.aliases && (!Array.isArray(s.aliases) || !s.aliases.every(text))) fail('站点别名无效');
+    stations.add(s.id);
+  }
+  for (const l of city.lines) {
+    if (
+      !object(l) ||
+      !text(l.id) ||
+      !text(l.name) ||
+      !text(l.shortName) ||
+      !/^#[0-9a-f]{6}$/i.test(l.color) ||
+      !['metro', 'tram', 'rail', 'maglev'].includes(l.kind) ||
+      lines.has(l.id)
+    )
+      fail('线路信息无效');
+    if (
+      !Array.isArray(l.stationIds) ||
+      l.stationIds.length < 2 ||
+      l.stationIds.some((id) => !stations.has(id)) ||
+      new Set(l.stationIds).size !== l.stationIds.length
+    )
+      fail(`${l.name} 的站点引用无效`);
+    lines.add(l.id);
+  }
+  for (const s of city.segments) {
+    if (
+      !object(s) ||
+      !text(s.id) ||
+      segments.has(s.id) ||
+      !lines.has(s.lineId) ||
+      !stations.has(s.from) ||
+      !stations.has(s.to) ||
+      s.from === s.to
+    )
+      fail('区间引用无效');
+    const line = city.lines.find((l) => l.id === s.lineId)!;
+    if (![s.from, s.to].every((id) => line.stationIds.includes(id))) fail('区间端点不在线路中');
+    if (s.points && (!Array.isArray(s.points) || s.points.length < 2 || !s.points.every(point)))
+      fail('区间示意坐标无效');
+    if (s.oneWay !== undefined && typeof s.oneWay !== 'boolean') fail('oneWay 应为布尔值');
+    segments.add(s.id);
+  }
+  for (const source of city.sources)
+    if (
+      !object(source) ||
+      !text(source.title) ||
+      typeof source.url !== 'string' ||
+      !/^https?:\/\//.test(source.url)
+    )
+      fail('来源链接无效');
+  return city;
+}

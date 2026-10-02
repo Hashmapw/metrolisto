@@ -1,0 +1,563 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Focus, Maximize2, Minus, Plus, RotateCcw, TrainFront, X } from 'lucide-react';
+import type { Network } from '../lib/network';
+import type { Progress, Route, Station } from '../types';
+
+interface Props {
+  network: Network;
+  progress: Progress;
+  route: Route | null;
+  activeLine: string | null;
+  exploredOnly: boolean;
+  focusStation: string | null;
+  onStation: (station: Station) => void;
+  manualStationIds: Set<string>;
+  onUnlightStation: (station: Station) => void;
+  onSetEndpoint: (id: string, kind: 'from' | 'to') => void;
+}
+
+export default function MetroMap({
+  network,
+  progress,
+  route,
+  activeLine,
+  exploredOnly,
+  focusStation,
+  onStation,
+  manualStationIds,
+  onUnlightStation,
+  onSetEndpoint,
+}: Props) {
+  const { city } = network;
+  const frame = useRef<HTMLDivElement>(null),
+    svgRef = useRef<SVGSVGElement>(null);
+  const [size, setSize] = useState({ width: 900, height: 570 });
+  const [view, setView] = useState({
+    x: city.center[0],
+    y: city.center[1],
+    width: window.innerWidth <= 760 ? 1250 : 2050,
+  });
+  const [selected, setSelected] = useState<Station | null>(null);
+  const [labelsOn, setLabelsOn] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const moved = useRef(false);
+  const gestureStart = useRef({ x: 0, y: 0 });
+  const height = (view.width * size.height) / size.width;
+  const routeEdges = useMemo(() => new Set(route?.segmentIds), [route]);
+  const routeStations = useMemo(() => new Set(route?.stationIds), [route]);
+  const scale = view.width / size.width;
+
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width && height) setSize({ width, height });
+    });
+    if (frame.current) observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const fit = (ids?: string[]) => {
+    const stations = ids ? ids.map((id) => network.stationById.get(id)!) : city.stations;
+    if (!stations.length) return;
+    const stationIds = new Set(stations.map((s) => s.id));
+    const points = city.segments
+      .filter((s) => stationIds.has(s.from) && stationIds.has(s.to))
+      .flatMap((s) => s.points ?? []);
+    const xs = [...stations.map((s) => s.x), ...points.map((p) => p[0])],
+      ys = [...stations.map((s) => s.y), ...points.map((p) => p[1])];
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    setView({
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      width: Math.max(650, maxX - minX + 240, ((maxY - minY + 200) * size.width) / size.height),
+    });
+  };
+
+  useEffect(() => {
+    if (focusStation) {
+      const s = network.stationById.get(focusStation);
+      if (s) {
+        setSelected(s);
+        setView({ x: s.x, y: s.y, width: 900 });
+      }
+    }
+  }, [focusStation, network]);
+
+  useEffect(() => {
+    if (route) fit(route.stationIds);
+  }, [route]); // fit only when the user previews a new route
+  useEffect(() => {
+    if (activeLine) fit(network.lineById.get(activeLine)?.stationIds);
+  }, [activeLine]);
+
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / rect.width - 0.5,
+        py = (e.clientY - rect.top) / rect.height - 0.5;
+      setView((v) => {
+        const width = Math.min(6000, Math.max(360, v.width * Math.exp(e.deltaY * 0.0015)));
+        return {
+          width,
+          x: v.x + px * (v.width - width),
+          y: v.y + (py * (v.width - width) * rect.height) / rect.width,
+        };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpanded(false);
+        setSelected(null);
+      }
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, []);
+
+  const labels = useMemo(() => {
+    if (!labelsOn) return [];
+    const fontSize = Math.max(16, scale * 10.5);
+    const boxes: { x: number; y: number; w: number; h: number }[] = [];
+    return [...city.stations]
+      .filter(
+        (s) =>
+          s.x > view.x - view.width / 2 - 50 &&
+          s.x < view.x + view.width / 2 + 50 &&
+          s.y > view.y - height / 2 - 50 &&
+          s.y < view.y + height / 2 + 50,
+      )
+      .sort((a, b) => {
+        const priority = (s: Station) =>
+          (s.id === selected?.id ? 20 : 0) +
+          (routeStations.has(s.id) ? 10 : 0) +
+          (network.stationLines.get(s.id)!.length > 1 ? 5 : 0) +
+          (progress.stations.has(s.id) ? 3 : 0);
+        return priority(b) - priority(a);
+      })
+      .flatMap((s) => {
+        if (activeLine && !network.lineById.get(activeLine)!.stationIds.includes(s.id)) return [];
+        const w = s.name.length * fontSize,
+          h = fontSize * 1.3,
+          gap = 12;
+        const directions = [
+          { x: s.x + gap, y: s.y - h / 2 },
+          { x: s.x - w - gap, y: s.y - h / 2 },
+          { x: s.x - w / 2, y: s.y - h - gap },
+          { x: s.x - w / 2, y: s.y + gap },
+        ];
+        if ((s.label ?? 0) % 2) directions.reverse();
+        const box = directions.find(
+          (p) =>
+            p.x >= view.x - view.width / 2 + scale * 8 &&
+            p.x + w <= view.x + view.width / 2 - scale * 8 &&
+            p.y >= view.y - height / 2 + scale * 8 &&
+            p.y + h <= view.y + height / 2 - scale * 8 &&
+            !boxes.some(
+              (b) =>
+                p.x < b.x + b.w + 8 &&
+                p.x + w + 8 > b.x &&
+                p.y < b.y + b.h + 5 &&
+                p.y + h + 5 > b.y,
+            ),
+        );
+        if (!box) return [];
+        boxes.push({ ...box, w, h });
+        return [{ station: s, x: box.x, y: box.y + h * 0.77, fontSize }];
+      });
+  }, [
+    view,
+    size,
+    city,
+    labelsOn,
+    selected,
+    activeLine,
+    progress,
+    routeStations,
+    network,
+    height,
+    scale,
+  ]);
+
+  const zoom = (factor: number) =>
+    setView((v) => ({ ...v, width: Math.max(360, Math.min(6000, v.width * factor)) }));
+  const selectStation = (s: Station) => {
+    if (!moved.current) {
+      setSelected(s);
+      onStation(s);
+    }
+  };
+
+  return (
+    <div ref={frame} className={`metro-map ${expanded ? 'expanded' : ''}`}>
+      <div className="map-watermark">
+        <TrainFront size={15} />
+        <span>{city.en} RAIL NETWORK</span>
+      </div>
+      <div className="map-view-actions">
+        <button
+          className={labelsOn ? 'map-pill active' : 'map-pill'}
+          onClick={() => setLabelsOn(!labelsOn)}
+        >
+          <span className="text-icon">Aa</span> 站名 {labelsOn && <Check size={12} />}
+        </button>
+        <button
+          className="map-pill icon-only"
+          aria-label={expanded ? '退出全屏地图' : '展开地图'}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? <X size={16} /> : <Maximize2 size={15} />}
+        </button>
+      </div>
+      <svg
+        ref={svgRef}
+        className="network-svg"
+        viewBox={`${view.x - view.width / 2} ${view.y - height / 2} ${view.width} ${height}`}
+        role="group"
+        aria-label={`${city.name}地铁示意图，可拖动和缩放，点击站点单独点亮`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          const delta = view.width * 0.1;
+          if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '-'].includes(e.key))
+            e.preventDefault();
+          if (e.key === '+') zoom(0.8);
+          if (e.key === '-') zoom(1.25);
+          if (e.key.startsWith('Arrow'))
+            setView((v) => ({
+              ...v,
+              x: v.x + (e.key === 'ArrowLeft' ? -delta : e.key === 'ArrowRight' ? delta : 0),
+              y: v.y + (e.key === 'ArrowUp' ? -delta : e.key === 'ArrowDown' ? delta : 0),
+            }));
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          if (!pointers.current.size) {
+            moved.current = false;
+            gestureStart.current = { x: e.clientX, y: e.clientY };
+          }
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const old = pointers.current.get(e.pointerId);
+          if (!old) return;
+          const dx = e.clientX - old.x,
+            dy = e.clientY - old.y;
+          if (
+            Math.hypot(e.clientX - gestureStart.current.x, e.clientY - gestureStart.current.y) > 5
+          )
+            moved.current = true;
+          if (pointers.current.size === 2) {
+            const other = [...pointers.current.entries()].find(([id]) => id !== e.pointerId)![1];
+            const before = Math.hypot(old.x - other.x, old.y - other.y),
+              after = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+            if (before > 0 && after > 0) zoom(before / after);
+            moved.current = true;
+          } else if (moved.current)
+            setView((v) => ({
+              ...v,
+              x: v.x - (dx * v.width) / size.width,
+              y: v.y - (dy * v.width) / size.width,
+            }));
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }}
+        onPointerUp={(e) => {
+          if (!pointers.current.has(e.pointerId)) return;
+          // Pointer capture targets the SVG, so hit-test the release position for stations.
+          if (!moved.current) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = view.x + (e.clientX - rect.left - rect.width / 2) * scale;
+            const y = view.y + (e.clientY - rect.top - rect.height / 2) * scale;
+            const station = [...city.stations].sort(
+              (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
+            )[0];
+            if (station && Math.hypot(station.x - x, station.y - y) < Math.max(13, scale * 12))
+              selectStation(station);
+          }
+          pointers.current.delete(e.pointerId);
+        }}
+        onPointerCancel={(e) => {
+          pointers.current.delete(e.pointerId);
+          moved.current = true;
+        }}
+      >
+        <defs>
+          <pattern id={`dots-${city.id}`} width="42" height="42" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1.25" fill="#cbd4df" opacity=".42" />
+          </pattern>
+          <filter id="station-glow">
+            <feGaussianBlur stdDeviation="6" />
+          </filter>
+        </defs>
+        <rect
+          x={view.x - view.width / 2}
+          y={view.y - height / 2}
+          width={view.width}
+          height={height}
+          fill={`url(#dots-${city.id})`}
+        />
+        {city.id === 'shanghai' && (
+          <g pointerEvents="none" opacity=".8">
+            <path
+              d="M 1810 350 C 2180 490 1960 790 1735 950 C 1535 1090 2120 1160 1790 1480 S 1410 1770 1510 2100"
+              fill="none"
+              stroke="#e5f0f6"
+              strokeWidth="42"
+            />
+            <text
+              x="1755"
+              y="1510"
+              fill="#a7c3d3"
+              fontSize="20"
+              letterSpacing="8"
+              transform="rotate(-48 1755 1510)"
+            >
+              黄浦江
+            </text>
+          </g>
+        )}
+        <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+          {city.segments.map((edge) => {
+            const line = network.lineById.get(edge.lineId)!;
+            const a = network.stationById.get(edge.from)!,
+              b = network.stationById.get(edge.to)!;
+            const isLit = progress.segments.has(edge.id),
+              isRoute = routeEdges.has(edge.id);
+            const dim = (activeLine && activeLine !== edge.lineId) || (route && !isRoute);
+            const points = edge.points ?? [
+              [a.x, a.y],
+              [b.x, b.y],
+            ];
+            const color = exploredOnly && !isLit && !isRoute ? '#dce1e8' : line.color;
+            // Place a direction arrow on the longest straight leg, clear of station markers.
+            const arrow = edge.oneWay
+              ? points
+                  .slice(1)
+                  .map((p, i) => ({
+                    x: (p[0] + points[i][0]) / 2,
+                    y: (p[1] + points[i][1]) / 2,
+                    angle: (Math.atan2(p[1] - points[i][1], p[0] - points[i][0]) * 180) / Math.PI,
+                    length: Math.hypot(p[0] - points[i][0], p[1] - points[i][1]),
+                  }))
+                  .sort((a, b) => b.length - a.length)[0]
+              : null;
+            const arrowSize = Math.max(9, scale * 5);
+            return (
+              <g
+                key={edge.id}
+                opacity={dim ? 0.13 : isLit || isRoute ? 1 : exploredOnly ? 0.55 : 0.65}
+              >
+                <polyline
+                  points={points.map((p) => p.join(',')).join(' ')}
+                  stroke={color}
+                  strokeWidth={isRoute ? 9 : isLit ? 8 : 5.5}
+                  className={isRoute ? 'preview-line' : ''}
+                />
+                {arrow && arrow.length > arrowSize * 4 && (
+                  <path
+                    d={`M ${-arrowSize} ${-arrowSize * 0.65} L ${arrowSize} 0 L ${-arrowSize} ${arrowSize * 0.65} Z`}
+                    transform={`translate(${arrow.x} ${arrow.y}) rotate(${arrow.angle})`}
+                    fill={color}
+                    stroke="#fbfcfe"
+                    strokeWidth={Math.max(1.5, scale)}
+                  >
+                    <title>
+                      {a.name} → {b.name} · 单向运行
+                    </title>
+                  </path>
+                )}
+              </g>
+            );
+          })}
+        </g>
+        <g>
+          {city.stations.map((s) => {
+            const state = progress.stations.get(s.id),
+              interchange = network.stationLines.get(s.id)!.length > 1;
+            const inRoute = routeStations.has(s.id),
+              inLine = !activeLine || network.lineById.get(activeLine)!.stationIds.includes(s.id);
+            const r = interchange ? 8.8 : 5.7;
+            const color = state?.visited
+              ? '#2864eb'
+              : state?.transferred
+                ? '#f29b37'
+                : state?.passed
+                  ? '#7095d9'
+                  : '#a2acbb';
+            const opacity = !inLine || (route && !inRoute) ? 0.22 : 1;
+            return (
+              <g
+                key={s.id}
+                role="button"
+                tabIndex={inLine ? 0 : -1}
+                aria-label={`点亮站点 ${s.name}`}
+                onClick={(e) => {
+                  // Assistive technologies can dispatch a click without pointer events.
+                  if (e.detail === 0) {
+                    moved.current = false;
+                    selectStation(s);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    moved.current = false;
+                    selectStation(s);
+                  }
+                }}
+                className="map-station"
+                opacity={opacity}
+              >
+                <title>
+                  {s.name} ·{' '}
+                  {network.stationLines
+                    .get(s.id)!
+                    .map((l) => l.name)
+                    .join(' / ')}
+                  {state?.visited
+                    ? ' · 已上下车'
+                    : state?.transferred
+                      ? ' · 已换乘'
+                      : state?.passed
+                        ? ' · 已途经'
+                        : ''}
+                </title>
+                <circle cx={s.x} cy={s.y} r={Math.max(r + 7, scale * 9)} fill="transparent" />
+                {selected?.id === s.id && (
+                  <circle cx={s.x} cy={s.y} r="24" fill="#2864eb" opacity=".12" />
+                )}
+                <circle
+                  cx={s.x}
+                  cy={s.y}
+                  r={r}
+                  fill={state?.visited ? '#2864eb' : state?.transferred ? '#fff1d8' : 'white'}
+                  stroke={inRoute ? '#2864eb' : color}
+                  strokeWidth={interchange ? 2.4 : 1.8}
+                />
+                {interchange && (
+                  <circle cx={s.x} cy={s.y} r="3.1" fill={state?.visited ? 'white' : color} />
+                )}
+                {state?.visited && state.transferred && (
+                  <circle
+                    cx={s.x + 6}
+                    cy={s.y - 6}
+                    r="3.4"
+                    fill="#f29b37"
+                    stroke="white"
+                    strokeWidth="1"
+                  />
+                )}
+              </g>
+            );
+          })}
+        </g>
+        <g pointerEvents="none">
+          {labels.map(({ station: s, x, y, fontSize }) => (
+            <text
+              key={s.id}
+              x={x}
+              y={y}
+              fontSize={fontSize}
+              fontWeight={network.stationLines.get(s.id)!.length > 1 ? 550 : 400}
+              fill={progress.stations.get(s.id)?.visited ? '#2156b9' : '#626d7f'}
+              stroke="#fbfcfe"
+              strokeWidth="4"
+              paintOrder="stroke"
+              strokeLinejoin="round"
+            >
+              {s.name}
+            </text>
+          ))}
+        </g>
+      </svg>
+      {selected && (
+        <div className="station-popover">
+          <button
+            className="icon-button close-popover"
+            aria-label="关闭站点详情"
+            onClick={() => setSelected(null)}
+          >
+            <X size={15} />
+          </button>
+          <span className="eyebrow">STATION</span>
+          <h3>{selected.name}</h3>
+          <div className="station-lines">
+            {network.stationLines.get(selected.id)!.map((l) => (
+              <span className="tiny-line" key={l.id} style={{ background: l.color }}>
+                {l.shortName}
+              </span>
+            ))}
+          </div>
+          <p>
+            {progress.stations.get(selected.id)?.visited
+              ? '● 已点亮 · 上下车过'
+              : progress.stations.get(selected.id)?.transferred
+                ? '● 已点亮 · 换乘过'
+                : progress.stations.get(selected.id)?.passed
+                  ? '● 已点亮 · 途经过'
+                  : '点击地图站点，即可单独点亮'}
+          </p>
+          {manualStationIds.has(selected.id) && (
+            <button className="undo-station" onClick={() => onUnlightStation(selected)}>
+              <RotateCcw size={13} /> 取消点亮
+            </button>
+          )}
+          <div className="endpoint-actions">
+            <button
+              onClick={() => {
+                onSetEndpoint(selected.id, 'from');
+                setSelected(null);
+              }}
+            >
+              从这里出发
+            </button>
+            <button
+              onClick={() => {
+                onSetEndpoint(selected.id, 'to');
+                setSelected(null);
+              }}
+            >
+              到这里去
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="map-bottom-note">
+        <span className="live-dot" /> 每一站，都算数
+        <span className="desktop-only"> · 点击站点点亮，拖动探索地图</span>
+      </div>
+      <div className="map-controls">
+        <button aria-label="放大地图" title="放大" onClick={() => zoom(0.78)}>
+          <Plus size={18} />
+        </button>
+        <span>{Math.round((2050 / view.width) * 100)}%</span>
+        <button aria-label="缩小地图" title="缩小" onClick={() => zoom(1.28)}>
+          <Minus size={18} />
+        </button>
+        <i />
+        <button aria-label="查看完整线网" title="完整线网" onClick={() => fit()}>
+          <Focus size={18} />
+        </button>
+        <button
+          aria-label="回到市中心"
+          title="回到市中心"
+          onClick={() => setView({ x: city.center[0], y: city.center[1], width: 2050 })}
+        >
+          <RotateCcw size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
