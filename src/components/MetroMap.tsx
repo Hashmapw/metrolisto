@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Focus, Maximize2, Minus, Plus, RotateCcw, TrainFront, X } from 'lucide-react';
+import { Focus, LocateFixed, Maximize2, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import type { Network } from '../lib/network';
 import type { Progress, Route, Station } from '../types';
 
@@ -15,6 +15,15 @@ interface Props {
   onUnlightStation: (station: Station) => void;
   onSetEndpoint: (id: string, kind: 'from' | 'to') => void;
 }
+
+const COLOR = {
+  visited: '#0052d9',
+  transferred: '#e37318',
+  passed: '#7aa0f2',
+  idle: '#b4bac4',
+  dim: '#e1e4ea',
+  halo: '#fafbfc',
+};
 
 export default function MetroMap({
   network,
@@ -198,22 +207,25 @@ export default function MetroMap({
       onStation(s);
     }
   };
+  const selectedState = selected ? progress.stations.get(selected.id) : undefined;
+  const selectedLit = !!(
+    selectedState?.visited ||
+    selectedState?.transferred ||
+    selectedState?.passed
+  );
 
   return (
-    <div ref={frame} className={`metro-map ${expanded ? 'expanded' : ''}`}>
-      <div className="map-watermark">
-        <TrainFront size={15} />
-        <span>{city.en} RAIL NETWORK</span>
-      </div>
-      <div className="map-view-actions">
+    <div ref={frame} className={`map-frame ${expanded ? 'expanded' : ''}`}>
+      <div className="map-float top-right">
         <button
-          className={labelsOn ? 'map-pill active' : 'map-pill'}
+          className={labelsOn ? 'map-chip active' : 'map-chip'}
+          aria-pressed={labelsOn}
           onClick={() => setLabelsOn(!labelsOn)}
         >
-          <span className="text-icon">Aa</span> 站名 {labelsOn && <Check size={12} />}
+          <span className="aa">Aa</span> 站名
         </button>
         <button
-          className="map-pill icon-only"
+          className="map-chip icon-only"
           aria-label={expanded ? '退出全屏地图' : '展开地图'}
           onClick={() => setExpanded(!expanded)}
         >
@@ -294,12 +306,9 @@ export default function MetroMap({
         }}
       >
         <defs>
-          <pattern id={`dots-${city.id}`} width="42" height="42" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1.25" fill="#cbd4df" opacity=".42" />
+          <pattern id={`dots-${city.id}`} width="40" height="40" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1.2" fill="#c9cfd8" opacity=".5" />
           </pattern>
-          <filter id="station-glow">
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
         </defs>
         <rect
           x={view.x - view.width / 2}
@@ -309,17 +318,17 @@ export default function MetroMap({
           fill={`url(#dots-${city.id})`}
         />
         {city.id === 'shanghai' && (
-          <g pointerEvents="none" opacity=".8">
+          <g pointerEvents="none">
             <path
               d="M 1810 350 C 2180 490 1960 790 1735 950 C 1535 1090 2120 1160 1790 1480 S 1410 1770 1510 2100"
               fill="none"
-              stroke="#e5f0f6"
+              stroke="#e8f0f6"
               strokeWidth="42"
             />
             <text
               x="1755"
               y="1510"
-              fill="#a7c3d3"
+              fill="#a9bfcd"
               fontSize="20"
               letterSpacing="8"
               transform="rotate(-48 1755 1510)"
@@ -340,7 +349,7 @@ export default function MetroMap({
               [a.x, a.y],
               [b.x, b.y],
             ];
-            const color = exploredOnly && !isLit && !isRoute ? '#dce1e8' : line.color;
+            const color = exploredOnly && !isLit && !isRoute ? COLOR.dim : line.color;
             // Place a direction arrow on the longest straight leg, clear of station markers.
             const arrow = edge.oneWay
               ? points
@@ -357,7 +366,7 @@ export default function MetroMap({
             return (
               <g
                 key={edge.id}
-                opacity={dim ? 0.13 : isLit || isRoute ? 1 : exploredOnly ? 0.55 : 0.65}
+                opacity={dim ? 0.12 : isLit || isRoute ? 1 : exploredOnly ? 0.7 : 0.7}
               >
                 <polyline
                   points={points.map((p) => p.join(',')).join(' ')}
@@ -370,7 +379,7 @@ export default function MetroMap({
                     d={`M ${-arrowSize} ${-arrowSize * 0.65} L ${arrowSize} 0 L ${-arrowSize} ${arrowSize * 0.65} Z`}
                     transform={`translate(${arrow.x} ${arrow.y}) rotate(${arrow.angle})`}
                     fill={color}
-                    stroke="#fbfcfe"
+                    stroke={COLOR.halo}
                     strokeWidth={Math.max(1.5, scale)}
                   >
                     <title>
@@ -390,13 +399,13 @@ export default function MetroMap({
               inLine = !activeLine || network.lineById.get(activeLine)!.stationIds.includes(s.id);
             const r = interchange ? 8.8 : 5.7;
             const color = state?.visited
-              ? '#2864eb'
+              ? COLOR.visited
               : state?.transferred
-                ? '#f29b37'
+                ? COLOR.transferred
                 : state?.passed
-                  ? '#7095d9'
-                  : '#a2acbb';
-            const opacity = !inLine || (route && !inRoute) ? 0.22 : 1;
+                  ? COLOR.passed
+                  : COLOR.idle;
+            const opacity = !inLine || (route && !inRoute) ? 0.2 : 1;
             return (
               <g
                 key={s.id}
@@ -436,14 +445,14 @@ export default function MetroMap({
                 </title>
                 <circle cx={s.x} cy={s.y} r={Math.max(r + 7, scale * 9)} fill="transparent" />
                 {selected?.id === s.id && (
-                  <circle cx={s.x} cy={s.y} r="24" fill="#2864eb" opacity=".12" />
+                  <circle cx={s.x} cy={s.y} r="24" fill={COLOR.visited} opacity=".12" />
                 )}
                 <circle
                   cx={s.x}
                   cy={s.y}
                   r={r}
-                  fill={state?.visited ? '#2864eb' : state?.transferred ? '#fff1d8' : 'white'}
-                  stroke={inRoute ? '#2864eb' : color}
+                  fill={state?.visited ? COLOR.visited : state?.transferred ? '#fff1e9' : 'white'}
+                  stroke={inRoute ? COLOR.visited : color}
                   strokeWidth={interchange ? 2.4 : 1.8}
                 />
                 {interchange && (
@@ -454,7 +463,7 @@ export default function MetroMap({
                     cx={s.x + 6}
                     cy={s.y - 6}
                     r="3.4"
-                    fill="#f29b37"
+                    fill={COLOR.transferred}
                     stroke="white"
                     strokeWidth="1"
                   />
@@ -470,9 +479,9 @@ export default function MetroMap({
               x={x}
               y={y}
               fontSize={fontSize}
-              fontWeight={network.stationLines.get(s.id)!.length > 1 ? 550 : 400}
-              fill={progress.stations.get(s.id)?.visited ? '#2156b9' : '#626d7f'}
-              stroke="#fbfcfe"
+              fontWeight={network.stationLines.get(s.id)!.length > 1 ? 600 : 400}
+              fill={progress.stations.get(s.id)?.visited ? '#0043b3' : '#5a6270'}
+              stroke={COLOR.halo}
               strokeWidth="4"
               paintOrder="stroke"
               strokeLinejoin="round"
@@ -485,36 +494,31 @@ export default function MetroMap({
       {selected && (
         <div className="station-popover">
           <button
-            className="icon-button close-popover"
+            className="icon-btn small"
             aria-label="关闭站点详情"
             onClick={() => setSelected(null)}
           >
             <X size={15} />
           </button>
-          <span className="eyebrow">STATION</span>
           <h3>{selected.name}</h3>
           <div className="station-lines">
             {network.stationLines.get(selected.id)!.map((l) => (
-              <span className="tiny-line" key={l.id} style={{ background: l.color }}>
+              <span className="line-tag" key={l.id} style={{ background: l.color }}>
                 {l.shortName}
               </span>
             ))}
           </div>
-          <p>
-            {progress.stations.get(selected.id)?.visited
-              ? '● 已点亮 · 上下车过'
-              : progress.stations.get(selected.id)?.transferred
-                ? '● 已点亮 · 换乘过'
-                : progress.stations.get(selected.id)?.passed
-                  ? '● 已点亮 · 途经过'
-                  : '点击地图站点，即可单独点亮'}
+          <p className={`station-status ${selectedLit ? 'lit' : ''}`}>
+            <span className="dot" />
+            {selectedState?.visited
+              ? '已点亮 · 上下车过'
+              : selectedState?.transferred
+                ? '已点亮 · 换乘过'
+                : selectedState?.passed
+                  ? '已点亮 · 途经过'
+                  : '尚未点亮 · 点击站点即可单独点亮'}
           </p>
-          {manualStationIds.has(selected.id) && (
-            <button className="undo-station" onClick={() => onUnlightStation(selected)}>
-              <RotateCcw size={13} /> 取消点亮
-            </button>
-          )}
-          <div className="endpoint-actions">
+          <div className="popover-actions">
             <button
               onClick={() => {
                 onSetEndpoint(selected.id, 'from');
@@ -532,30 +536,31 @@ export default function MetroMap({
               到这里去
             </button>
           </div>
+          {manualStationIds.has(selected.id) && (
+            <button className="popover-undo" onClick={() => onUnlightStation(selected)}>
+              <RotateCcw size={12} /> 取消单站点亮
+            </button>
+          )}
         </div>
       )}
-      <div className="map-bottom-note">
-        <span className="live-dot" /> 每一站，都算数
-        <span className="desktop-only"> · 点击站点点亮，拖动探索地图</span>
-      </div>
-      <div className="map-controls">
+      <span className="map-scale">{Math.round((2050 / view.width) * 100)}%</span>
+      <div className="map-float bottom-right">
         <button aria-label="放大地图" title="放大" onClick={() => zoom(0.78)}>
           <Plus size={18} />
         </button>
-        <span>{Math.round((2050 / view.width) * 100)}%</span>
         <button aria-label="缩小地图" title="缩小" onClick={() => zoom(1.28)}>
           <Minus size={18} />
         </button>
         <i />
         <button aria-label="查看完整线网" title="完整线网" onClick={() => fit()}>
-          <Focus size={18} />
+          <Focus size={17} />
         </button>
         <button
           aria-label="回到市中心"
           title="回到市中心"
           onClick={() => setView({ x: city.center[0], y: city.center[1], width: 2050 })}
         >
-          <RotateCcw size={16} />
+          <LocateFixed size={17} />
         </button>
       </div>
     </div>

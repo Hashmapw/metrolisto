@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, Search, X } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { searchStations, type Network } from '../lib/network';
 import type { Station } from '../types';
 
@@ -50,9 +50,9 @@ export default function StationPicker({
     setQuery('');
     input.current?.blur();
   };
-  return (
-    <div ref={container} className={`station-picker ${variant} ${open ? 'is-open' : ''}`}>
-      {variant === 'search' && <Search size={17} />}
+  const field = (
+    <>
+      {variant === 'search' && <Search size={16} />}
       <input
         ref={input}
         role="combobox"
@@ -98,7 +98,7 @@ export default function StationPicker({
       {value && !open && (
         <button
           type="button"
-          className="clear-input"
+          className="clear-btn"
           aria-label={`清除${label}`}
           onClick={() => {
             onChange('');
@@ -108,12 +108,11 @@ export default function StationPicker({
           <X size={13} />
         </button>
       )}
-      {variant === 'search' && !value && !open && <kbd>⌕</kbd>}
       {open && (
-        <div className="station-options" role="listbox" id={listId} aria-label={`${label}搜索结果`}>
-          <div className="options-heading">
-            {query ? '搜索结果' : transferOnly ? '选择换乘站' : '选择站点'}{' '}
-            <span>{results.length === 50 ? '50+' : results.length} 个站点</span>
+        <div className="options" role="listbox" id={listId} aria-label={`${label}搜索结果`}>
+          <div className="options-head">
+            <span>{query ? '搜索结果' : transferOnly ? '可换乘站点' : '全部站点'}</span>
+            <span>{results.length === 50 ? '50+' : results.length} 个</span>
           </div>
           {results.length ? (
             results.map((s, i) => (
@@ -136,17 +135,28 @@ export default function StationPicker({
                       .join(' · ')}
                   </small>
                 </div>
-                <ArrowUpRight size={15} />
+                <ChevronRight size={15} />
               </button>
             ))
           ) : (
-            <div className="no-results">
-              没有找到站点，请试试中文或拼音。
+            <div className="options-empty">
+              没有找到站点，试试中文或拼音。
               {transferOnly && <small>这里只显示可换乘的站点。</small>}
             </div>
           )}
         </div>
       )}
+    </>
+  );
+  if (variant === 'search')
+    return (
+      <div ref={container} className={`picker search-box ${open ? 'is-open' : ''}`}>
+        {field}
+      </div>
+    );
+  return (
+    <div ref={container} className={`picker field ${open ? 'is-open' : ''}`}>
+      {field}
     </div>
   );
 }
