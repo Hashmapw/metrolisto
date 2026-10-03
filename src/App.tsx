@@ -44,6 +44,7 @@ import MetroMap from './components/MetroMap';
 import StationPicker from './components/StationPicker';
 
 type Page = 'map' | 'journal' | 'lines';
+const LAST_CITY_KEY = 'metrolisto.last-city.v1';
 const nav = [
   { id: 'map' as const, label: '探索地图', icon: MapIcon },
   { id: 'journal' as const, label: '我的足迹', icon: Footprints },
@@ -71,7 +72,14 @@ export default function App() {
   const [storageBlocked, setStorageBlocked] = useState(!!initial.error);
   const [viewedJourney, setViewedJourney] = useState<Route | null>(null);
   const exporting = useRef(false);
-  const [cityId, setCityId] = useState(cities[0].id);
+  const [cityId, setCityId] = useState(() => {
+    try {
+      const lastCity = localStorage.getItem(LAST_CITY_KEY);
+      return cities.find((city) => city.id === lastCity)?.id ?? cities[0].id;
+    } catch {
+      return cities[0].id;
+    }
+  });
   const [page, setPage] = useState<Page>('map');
   const [cityOpen, setCityOpen] = useState(false),
     [settingsOpen, setSettingsOpen] = useState(false),
@@ -180,6 +188,11 @@ export default function App() {
   };
   const changeCity = (id: string) => {
     setCityId(id);
+    try {
+      localStorage.setItem(LAST_CITY_KEY, id);
+    } catch {
+      // A blocked preference write should not prevent switching cities.
+    }
     setFrom('');
     setTo('');
     setVia([]);
