@@ -216,22 +216,6 @@ export default function MetroMap({
 
   return (
     <div ref={frame} className={`map-frame ${expanded ? 'expanded' : ''}`}>
-      <div className="map-float top-right">
-        <button
-          className={labelsOn ? 'map-chip active' : 'map-chip'}
-          aria-pressed={labelsOn}
-          onClick={() => setLabelsOn(!labelsOn)}
-        >
-          <span className="aa">Aa</span> 站名
-        </button>
-        <button
-          className="map-chip icon-only"
-          aria-label={expanded ? '退出全屏地图' : '展开地图'}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <X size={16} /> : <Maximize2 size={15} />}
-        </button>
-      </div>
       <svg
         ref={svgRef}
         className="network-svg"
@@ -543,25 +527,42 @@ export default function MetroMap({
           )}
         </div>
       )}
-      <span className="map-scale">{Math.round((2050 / view.width) * 100)}%</span>
-      <div className="map-float bottom-right">
-        <button aria-label="放大地图" title="放大" onClick={() => zoom(0.78)}>
-          <Plus size={18} />
-        </button>
-        <button aria-label="缩小地图" title="缩小" onClick={() => zoom(1.28)}>
-          <Minus size={18} />
-        </button>
-        <i />
-        <button aria-label="查看完整线网" title="完整线网" onClick={() => fit()}>
-          <Focus size={17} />
+      <div className="map-ctl">
+        <button
+          className="ctl"
+          aria-label={expanded ? '退出全屏地图' : '展开地图'}
+          title={expanded ? '退出全屏' : '全屏'}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? <X size={18} /> : <Maximize2 size={16} />}
         </button>
         <button
-          aria-label="回到市中心"
-          title="回到市中心"
-          onClick={() => setView({ x: city.center[0], y: city.center[1], width: 2050 })}
+          className={labelsOn ? 'ctl active' : 'ctl'}
+          aria-pressed={labelsOn}
+          aria-label="显示站名"
+          title="站名"
+          onClick={() => setLabelsOn(!labelsOn)}
         >
-          <LocateFixed size={17} />
+          <span className="aa">Aa</span>
         </button>
+        <div className="ctl-group">
+          <button className="zoom" aria-label="放大地图" title="放大" onClick={() => zoom(0.78)}>
+            <Plus size={18} />
+          </button>
+          <button className="zoom" aria-label="缩小地图" title="缩小" onClick={() => zoom(1.28)}>
+            <Minus size={18} />
+          </button>
+          <button aria-label="查看完整线网" title="完整线网" onClick={() => fit()}>
+            <Focus size={17} />
+          </button>
+          <button
+            aria-label="回到市中心"
+            title="回到市中心"
+            onClick={() => setView({ x: city.center[0], y: city.center[1], width: 2050 })}
+          >
+            <LocateFixed size={17} />
+          </button>
+        </div>
       </div>
     </div>
   );

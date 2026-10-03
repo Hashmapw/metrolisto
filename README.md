@@ -50,7 +50,6 @@ iOS 使用 Swift Package Manager。环境要求、单平台同步、原生构建
 
 站点数量按线网唯一 ID 去重，不等于运营方按线路累计的站数。支线归入同一线路；不同线路的平行区间分别统计。
 
-界面预览：[默认足迹视图](docs/screenshots/desktop.jpg)。
 
 ## 扩展城市
 

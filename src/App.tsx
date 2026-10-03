@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Button,
-  Dialog,
-  Popup,
-  Progress,
-  Segmented,
-  TabBar,
-  TabBarItem,
-} from 'tdesign-mobile-react';
+import { Button, Dialog, Popup, Segmented, TabBar, TabBarItem } from 'tdesign-mobile-react';
 import {
   AlertCircle,
   ArrowDownUp,
@@ -31,7 +23,6 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
-  Ticket,
   TrainFront,
   Trash2,
   Upload,
@@ -326,6 +317,59 @@ export default function App() {
     },
   }[page];
 
+  const stationRatio = progress.stations.size / city.stations.length;
+  const hero = (
+    <section className="hero">
+      <div className="hero-body">
+        <span className="hero-label">
+          <MapPin size={13} /> {city.name} · 探索度
+        </span>
+        <div className="hero-number">
+          {percentage}
+          <small>%</small>
+        </div>
+        <p>
+          {progress.stations.size === 0
+            ? '你的城市故事，从熟悉的那一站开始。'
+            : stationRatio === 1
+              ? '整座城市，都有你的足迹。'
+              : `还有 ${city.stations.length - progress.stations.size} 个站点，等你去发现。`}
+        </p>
+        <div className="hero-track" aria-hidden="true">
+          <i style={{ width: `${Math.max(stationRatio * 100, 0)}%` }} />
+          {[0, 25, 50, 75, 100].map((stop) => (
+            <span
+              key={stop}
+              className={stationRatio * 100 >= stop ? 'on' : ''}
+              style={{ left: `${stop}%` }}
+            />
+          ))}
+          <b style={{ left: `${stationRatio * 100}%` }}>
+            <TrainFront size={12} />
+          </b>
+        </div>
+      </div>
+      <div className="hero-stats">
+        <div>
+          <strong>{progress.stations.size}</strong>
+          <span>/ {city.stations.length} 站点</span>
+        </div>
+        <div>
+          <strong>{progress.segments.size}</strong>
+          <span>/ {city.segments.length} 区间</span>
+        </div>
+        <div>
+          <strong>{progress.lines.size}</strong>
+          <span>/ {city.lines.length} 线路</span>
+        </div>
+        <div>
+          <strong>{trips.length}</strong>
+          <span>次旅程</span>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div className="app">
       {!isMobile && (
@@ -402,51 +446,11 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="page">
+        <main className="page" key={page}>
           <div className="page-head">
             <div>
               <h1>{pageCopy.title}</h1>
               <p>{pageCopy.sub}</p>
-            </div>
-            <div className="stats">
-              <div className="stat">
-                <span>
-                  <MapPin size={13} /> 点亮站点
-                </span>
-                <strong>
-                  {progress.stations.size}
-                  <small>/ {city.stations.length}</small>
-                </strong>
-                <div className="meter">
-                  <i style={{ width: `${percentage}%` }} />
-                </div>
-              </div>
-              <div className="stat">
-                <span>
-                  <RouteIcon size={13} /> 走过区间
-                </span>
-                <strong>
-                  {progress.segments.size}
-                  <small>/ {city.segments.length}</small>
-                </strong>
-                <div className="meter success">
-                  <i
-                    style={{ width: `${(progress.segments.size / city.segments.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-              <div className="stat">
-                <span>
-                  <Ticket size={13} /> 记录旅程
-                </span>
-                <strong>
-                  {trips.length}
-                  <small>次出发</small>
-                </strong>
-                <span className="stat-caption">
-                  {trips.length ? `最近 ${shortDate(trips[0].createdAt)}` : '下一段旅程，等你出发'}
-                </span>
-              </div>
             </div>
           </div>
           {storageError && (
@@ -458,6 +462,7 @@ export default function App() {
               </button>
             </div>
           )}
+          {page !== 'map' && hero}
           {page === 'map' ? (
             <div className="explore">
               <section className="card map-card">
@@ -659,20 +664,19 @@ export default function App() {
                           />
                         </div>
                       </div>
-                      {via.length === 0 && (
-                        <button
-                          type="button"
-                          className="swap"
-                          aria-label="交换上车站和下车站"
-                          onClick={() => {
-                            setFrom(to);
-                            setTo(from);
-                            invalidate();
-                          }}
-                        >
-                          <ArrowDownUp size={15} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="swap"
+                        aria-label="交换上车站和下车站"
+                        onClick={() => {
+                          setFrom(to);
+                          setTo(from);
+                          setVia([...via].reverse());
+                          invalidate();
+                        }}
+                      >
+                        <ArrowDownUp size={16} />
+                      </button>
                     </div>
                     <div className="route-options">
                       <button
@@ -753,59 +757,10 @@ export default function App() {
                     <p className="planner-tip">最多可添加三个换乘站，换乘站需实际换线</p>
                   )}
                 </section>
-                <section className="card explore-card">
-                  <div className="explore-top">
-                    <div className="explore-ring">
-                      <Progress
-                        theme="circle"
-                        percentage={Number(percentage)}
-                        size={96}
-                        strokeWidth={7}
-                        color="#0052d9"
-                        trackColor="#eef0f4"
-                        label={
-                          <>
-                            {percentage}
-                            <small>%</small>
-                          </>
-                        }
-                      />
-                    </div>
-                    <div className="explore-copy">
-                      <span>{city.name}探索度</span>
-                      <h3>
-                        {progress.stations.size === 0
-                          ? '你的城市故事，从这里开始'
-                          : Number(percentage) === 100
-                            ? '整座城市，都有你的足迹'
-                            : '城市正在一点点被你点亮'}
-                      </h3>
-                      <p>
-                        {progress.stations.size === 0
-                          ? '不必走很远，就从熟悉的那一站。'
-                          : `还有 ${city.stations.length - progress.stations.size} 个站点，等你去发现。`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="explore-foot">
-                    <div>
-                      <span>乘坐线路</span>
-                      <strong>
-                        {progress.lines.size} <small>/ {city.lines.length} 条</small>
-                      </strong>
-                    </div>
-                    <div>
-                      <span>换乘过</span>
-                      <strong>
-                        {[...progress.stations.values()].filter((s) => s.transferred).length}{' '}
-                        <small>站</small>
-                      </strong>
-                    </div>
-                  </div>
-                </section>
+                {hero}
               </aside>
               {showSuggestion && (
-                <section className="suggest">
+                <section className="card suggest">
                   <span className="suggest-icon">
                     <TrainFront size={20} />
                   </span>
@@ -826,7 +781,7 @@ export default function App() {
                     </p>
                   </div>
                   <Button size="small" theme="primary" variant="outline" onClick={useSuggestion}>
-                    试试这段旅程
+                    试一试
                   </Button>
                 </section>
               )}
@@ -894,7 +849,7 @@ export default function App() {
               )}
             </section>
           ) : (
-            <section className="card panel">
+            <section>
               <div className="lines-grid">
                 {city.lines.map((line) => {
                   const edges = city.segments.filter((s) => s.lineId === line.id),
@@ -954,6 +909,9 @@ export default function App() {
           className="mobile-tabbar"
           value={page}
           split={false}
+          shape="round"
+          zIndex={100}
+          theme="tag"
           onChange={(value) => setPage(value as Page)}
         >
           {nav.map((item) => (
@@ -965,7 +923,7 @@ export default function App() {
       )}
       <Popup
         visible={cityOpen}
-        placement="center"
+        placement={isMobile ? 'bottom' : 'center'}
         onClose={() => setCityOpen(false)}
         destroyOnClose
         className="app-popup"
@@ -1046,7 +1004,7 @@ export default function App() {
       </Popup>
       <Popup
         visible={settingsOpen}
-        placement="center"
+        placement={isMobile ? 'bottom' : 'center'}
         onClose={() => setSettingsOpen(false)}
         destroyOnClose
         className="app-popup"
@@ -1101,7 +1059,7 @@ export default function App() {
       />
       <Popup
         visible={helpOpen}
-        placement="center"
+        placement={isMobile ? 'bottom' : 'center'}
         onClose={() => setHelpOpen(false)}
         destroyOnClose
         className="app-popup"
@@ -1161,7 +1119,7 @@ export default function App() {
       </Popup>
       <Popup
         visible={!!journeyDetail}
-        placement="center"
+        placement={isMobile ? 'bottom' : 'center'}
         onClose={() => setJourneyDetail(null)}
         destroyOnClose
         className="app-popup"
