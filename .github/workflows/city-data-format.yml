@@ -1,0 +1,20 @@
+name: City data format
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  city-data-format:
+    name: City data format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check all city JSON files
+        run: node scripts/format-city-data.mjs --check

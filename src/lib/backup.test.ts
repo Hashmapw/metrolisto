@@ -29,10 +29,14 @@ describe('backup export', () => {
       }),
     );
     const complete = vi.fn();
-    const pending = downloadBackup('{"城市":"北京"}', 'backup.json').then(complete);
+    const pending = downloadBackup('{"城市":"北京"}', 'backup.json', 'en-GB').then(complete);
     await vi.waitFor(() =>
       expect(Share.share).toHaveBeenCalledWith(
-        expect.objectContaining({ files: ['file:///cache/backup.json'] }),
+        expect.objectContaining({
+          files: ['file:///cache/backup.json'],
+          title: 'MetroListo journey backup',
+          dialogTitle: 'Save or share backup',
+        }),
       ),
     );
     expect(Filesystem.writeFile).toHaveBeenCalledWith({

@@ -2,6 +2,7 @@
  * Offline build-time adapter. Runtime uses the checked-in, provider-independent schema.
  */
 import fs from 'node:fs';
+import { formatCityData } from './format-city-data.mjs';
 
 const point = (p) => p.split(' ').map(Number);
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -22,7 +23,8 @@ function slicePath(path, a, b, loop) {
   }
   return [a, ...points, b].filter((p, i, all) => !i || distance(p, all[i - 1]) > 0.5);
 }
-function makeCity(input, id) {
+function makeCity(input, current) {
+  const { id } = current;
   const raw = JSON.parse(fs.readFileSync(input, 'utf8'));
   const stations = new Map(),
     lines = new Map(),
@@ -46,12 +48,17 @@ function makeCity(input, id) {
     if (!lines.has(lineId))
       lines.set(lineId, {
         id: lineId,
-        name,
-        shortName: name
-          .replace('号线八通线', '')
-          .replace('号线大兴线', '')
-          .replace('号线', '')
-          .replace('市域', ''),
+        names: [{ language: 'zh-CN', value: name }],
+        shortNames: [
+          {
+            language: 'zh-CN',
+            value: name
+              .replace('号线八通线', '')
+              .replace('号线大兴线', '')
+              .replace('号线', '')
+              .replace('市域', ''),
+          },
+        ],
         color: `#${l.cl}`,
         kind:
           name === '磁浮线'
@@ -71,8 +78,7 @@ function makeCity(input, id) {
       if (!stations.has(s.si))
         stations.set(s.si, {
           id: s.si,
-          name: s.n,
-          en: s.multilang?.n?.en || s.sp,
+          names: [{ language: 'zh-CN', value: s.n }],
           x,
           y,
           label: Number(s.lg),
@@ -107,21 +113,30 @@ function makeCity(input, id) {
       }
     }
   }
-  const byName = (name) => [...stations.values()].find((s) => s.name === name);
+  const byName = (name) =>
+    [...stations.values()].find((s) =>
+      s.names.some((n) => n.language === 'zh-CN' && n.value === name),
+    );
   function addLine(name, shortName, color, kind, names, coords) {
     const lineId = `${id}-${name}`;
     const stops = names.map((name, i) => {
       const existing = byName(name);
       if (existing) return existing;
       const [x, y] = coords[i];
-      const s = { id: `${id}-${name}`, name, x, y, label: 0 };
+      const s = {
+        id: `${id}-${name}`,
+        names: [{ language: 'zh-CN', value: name }],
+        x,
+        y,
+        label: 0,
+      };
       stations.set(s.id, s);
       return s;
     });
     lines.set(lineId, {
       id: lineId,
-      name,
-      shortName,
+      names: [{ language: 'zh-CN', value: name }],
+      shortNames: [{ language: 'zh-CN', value: shortName }],
       color,
       kind,
       stationIds: stops.map((s) => s.id),
@@ -261,40 +276,34 @@ function makeCity(input, id) {
       addSegment(lineId, a.id, b.id, [[a.x, a.y], ...bends, [b.x, b.y]], oneWay, curve);
     }
   }
+  // The city JSON is the sole source for reviewed names and metadata. Refresh only
+  // provider geometry/topology; contributors edit names directly in that JSON.
+  const currentStations = new Map(current.stations.map((s) => [s.id, s]));
+  const currentLines = new Map(current.lines.map((l) => [l.id, l]));
+  for (const station of stations.values()) {
+    const reviewed = currentStations.get(station.id);
+    if (reviewed) {
+      station.names = reviewed.names;
+      station.aliases = reviewed.aliases;
+    }
+    if (!station.names.some((n) => /^en(?:-|$)/i.test(n.language) && n.value.trim()))
+      console.warn(`请在 src/data/${id}.json 的 names 中核对并填写官方英文站名：${station.id}`);
+  }
+  for (const line of lines.values()) {
+    const reviewed = currentLines.get(line.id);
+    if (reviewed) {
+      line.names = reviewed.names;
+      line.shortNames = reviewed.shortNames;
+    }
+    if (
+      ![line.names, line.shortNames].every((names) =>
+        names.some((n) => /^en(?:-|$)/i.test(n.language) && n.value.trim()),
+      )
+    )
+      console.warn(`请在 src/data/${id}.json 核对并填写英文线路名称：${line.id}`);
+  }
   return {
-    schemaVersion: 1,
-    id,
-    name: id === 'shanghai' ? '上海' : '北京',
-    en: id === 'shanghai' ? 'SHANGHAI' : 'BEIJING',
-    updatedAt: '2026-10-03',
-    description:
-      id === 'shanghai'
-        ? '含机场联络线、磁浮线与金山铁路'
-        : '含亦庄有轨电车、西郊线及两条机场线，不含市郊铁路',
-    center: id === 'shanghai' ? [1660, 1230] : [1720, 860],
-    sources: [
-      {
-        title: '高德地铁公开线网数据',
-        url: `https://map.amap.com/service/subway?srhdata=${id === 'shanghai' ? '3100_drw_shanghai' : '1100_drw_beijing'}.json`,
-      },
-      ...(id === 'shanghai'
-        ? [
-            {
-              title: '上海市政府 · 金山铁路各站信息',
-              url: 'https://www.shanghai.gov.cn/nw17239/20260313/cc9fe6e3e47a47aca3a55b29cd0fb089.html',
-            },
-          ]
-        : [
-            {
-              title: '京港地铁 · 亦庄T1站间信息',
-              url: 'https://www.mtr.bj.cn/service/line/distable/Yizhuang%20T1%20Line.html',
-            },
-            {
-              title: '北京地铁 · 首都机场线站间信息',
-              url: 'https://wenjuan.bjsubway.com/station/zjgls/',
-            },
-          ]),
-    ],
+    ...current,
     stations: [...stations.values()],
     lines: [...lines.values()],
     segments: [...segments.values()],
@@ -314,11 +323,24 @@ function makeCity(input, id) {
       : {}),
   };
 }
-fs.mkdirSync('src/data', { recursive: true });
+if (process.argv.length !== 4)
+  throw new Error(
+    'Usage: node scripts/import-amap.mjs /path/to/shanghai.json /path/to/beijing.json',
+  );
+const updates = [];
 for (const [i, id] of ['shanghai', 'beijing'].entries()) {
-  const city = makeCity(process.argv[i + 2], id);
-  fs.writeFileSync(`src/data/${id}.json`, JSON.stringify(city));
+  const path = new URL(`../src/data/${id}.json`, import.meta.url);
+  const current = JSON.parse(fs.readFileSync(path, 'utf8'));
+  const city = makeCity(process.argv[i + 2], current);
+  updates.push({
+    path,
+    city,
+    json: formatCityData(city),
+  });
+}
+for (const { path, city, json } of updates) {
+  fs.writeFileSync(path, json);
   console.log(
-    `${city.name}: ${city.stations.length} stations, ${city.lines.length} lines, ${city.segments.length} sections`,
+    `${city.zhName}: ${city.stations.length} stations, ${city.lines.length} lines, ${city.segments.length} sections`,
   );
 }

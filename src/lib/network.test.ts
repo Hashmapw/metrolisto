@@ -1,3 +1,4 @@
+import { localisedName } from './i18n';
 import { describe, expect, it } from 'vitest';
 import { cities } from '../data';
 import { createNetwork, findRoute, routeGroups, searchStations } from './network';
@@ -7,7 +8,7 @@ import exampleCity from '../../docs/city.example.json';
 const sh = createNetwork(cities[0]),
   bj = createNetwork(cities[1]);
 const id = (network: typeof sh, name: string) =>
-  network.city.stations.find((s) => s.name === name)!.id;
+  network.city.stations.find((s) => localisedName(s, 'zh-CN') === name)!.id;
 const route = (network: typeof sh, from: string, to: string, via: string[] = []) =>
   findRoute(
     network,
@@ -16,7 +17,7 @@ const route = (network: typeof sh, from: string, to: string, via: string[] = [])
     via.map((n) => id(network, n)),
   )!;
 const names = (network: typeof sh, stationIds: string[]) =>
-  stationIds.map((id) => network.stationById.get(id)!.name);
+  stationIds.map((id) => localisedName(network.stationById.get(id), 'zh-CN'));
 
 describe('complete city networks', () => {
   it('accepts a developer-provided city without built-in city assumptions', () => {
@@ -28,16 +29,18 @@ describe('complete city networks', () => {
   });
   it('includes the requested rail and tram networks, without Beijing suburban rail', () => {
     expect(sh.city.lines).toHaveLength(22);
-    expect(sh.city.lines.map((l) => l.name)).toEqual(
+    expect(sh.city.lines.map((l) => localisedName(l, 'zh-CN'))).toEqual(
       expect.arrayContaining(['机场联络线', '金山铁路', '磁浮线']),
     );
     expect(bj.city.lines).toHaveLength(28);
-    expect(bj.city.lines.map((l) => l.name)).toEqual(
+    expect(bj.city.lines.map((l) => localisedName(l, 'zh-CN'))).toEqual(
       expect.arrayContaining(['亦庄有轨电车T1线', '西郊线', '首都机场线', '大兴机场线']),
     );
-    expect(bj.city.lines.some((l) => /S2|城市副中心|怀柔|通密/.test(l.name))).toBe(false);
+    expect(
+      bj.city.lines.some((l) => /S2|城市副中心|怀柔|通密/.test(localisedName(l, 'zh-CN'))),
+    ).toBe(false);
   });
-  it.each(cities)('$name: every station is reachable in both directions', (city) => {
+  it.each(cities)('$zhName: every station is reachable in both directions', (city) => {
     const network = createNetwork(city),
       start = city.stations[0].id;
     for (const reverse of [false, true]) {
@@ -67,13 +70,15 @@ describe('complete city networks', () => {
     }
   });
   it('does not offer paused or unopened Beijing stations', () => {
-    expect(bj.city.stations.some((s) => ['通运门', '老观里', '八角游乐园'].includes(s.name))).toBe(
-      false,
-    );
+    expect(
+      bj.city.stations.some((s) =>
+        ['通运门', '老观里', '八角游乐园'].includes(localisedName(s, 'zh-CN') ?? ''),
+      ),
+    ).toBe(false);
   });
   it('supports airport old names and pinyin search', () => {
-    expect(searchStations(sh, '浦东国际机场')[0].name).toBe('浦东1号2号航站楼');
-    expect(searchStations(sh, 'renmin')[0].name).toBe('人民广场');
+    expect(localisedName(searchStations(sh, '浦东国际机场')[0], 'zh-CN')).toBe('浦东1号2号航站楼');
+    expect(localisedName(searchStations(sh, 'renmin')[0], 'zh-CN')).toBe('人民广场');
   });
   it('rejects dangling edges and duplicate station IDs', () => {
     const invalid = structuredClone(cities[0]);
@@ -87,14 +92,16 @@ describe('complete city networks', () => {
 
 describe('route finding', () => {
   it('uses the single Dahongmen interchange between lines 8 and 10', () => {
-    expect(searchStations(bj, '大红门').filter((s) => s.name === '大红门')).toHaveLength(1);
+    expect(
+      searchStations(bj, '大红门').filter((s) => localisedName(s, 'zh-CN') === '大红门'),
+    ).toHaveLength(1);
     const r = route(bj, '大红门南', '石榴庄');
     expect(names(bj, r.stationIds)).toEqual(['大红门南', '大红门', '石榴庄']);
     expect(names(bj, r.transferIds)).toEqual(['大红门']);
     expect(
       bj.stationLines
         .get(id(bj, '大红门'))
-        ?.map((l) => l.name)
+        ?.map((l) => localisedName(l, 'zh-CN'))
         .sort(),
     ).toEqual(['10号线', '8号线']);
   });

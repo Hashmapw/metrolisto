@@ -1,3 +1,4 @@
+import { useLocale } from './LocaleProvider';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Search, X } from 'lucide-react';
 import { searchStations, type Network } from '../lib/network';
@@ -22,6 +23,7 @@ export default function StationPicker({
   label,
   variant = 'field',
 }: Props) {
+  const { locale, t, name } = useLocale();
   const [query, setQuery] = useState(''),
     [open, setOpen] = useState(false),
     [active, setActive] = useState(0);
@@ -61,8 +63,8 @@ export default function StationPicker({
         aria-autocomplete="list"
         aria-activedescendant={open && results[active] ? `${listId}-${active}` : undefined}
         aria-label={label}
-        value={open ? query : (selected?.name ?? '')}
-        placeholder={selected?.name ?? placeholder}
+        value={open ? query : name(selected)}
+        placeholder={name(selected) || placeholder}
         onFocus={() => {
           setOpen(true);
           setActive(0);
@@ -102,7 +104,7 @@ export default function StationPicker({
         <button
           type="button"
           className="clear-btn"
-          aria-label={`清除${label}`}
+          aria-label={t('清除{0}', label)}
           onClick={() => {
             onChange('');
             setQuery('');
@@ -112,10 +114,13 @@ export default function StationPicker({
         </button>
       )}
       {open && (
-        <div className="options" role="listbox" id={listId} aria-label={`${label}搜索结果`}>
+        <div className="options" role="listbox" id={listId} aria-label={t('{0}搜索结果', label)}>
           <div className="options-head">
-            <span>{query ? '搜索结果' : transferOnly ? '可换乘站点' : '全部站点'}</span>
-            <span>{results.length === 50 ? '50+' : results.length} 个</span>
+            <span>{query ? t('搜索结果') : transferOnly ? t('可换乘站点') : t('全部站点')}</span>
+            <span>
+              {results.length === 50 ? '50+' : results.length}{' '}
+              {locale === 'en-GB' && results.length === 1 ? 'result' : t('个')}
+            </span>
           </div>
           {results.length ? (
             results.map((s, i) => (
@@ -131,21 +136,16 @@ export default function StationPicker({
                 onClick={() => choose(s)}
               >
                 <div>
-                  <strong>{s.name}</strong>
-                  <small>
-                    {network.stationLines
-                      .get(s.id)!
-                      .map((l) => l.name)
-                      .join(' · ')}
-                  </small>
+                  <strong>{name(s)}</strong>
+                  <small>{network.stationLines.get(s.id)!.map(name).join(' · ')}</small>
                 </div>
                 <ChevronRight size={15} />
               </button>
             ))
           ) : (
             <div className="options-empty">
-              没有找到站点，试试中文或拼音。
-              {transferOnly && <small>这里只显示可换乘的站点。</small>}
+              {t('没有找到站点，试试英文、当地语言站名或别名。')}
+              {transferOnly && <small>{t('这里只显示可换乘的站点。')}</small>}
             </div>
           )}
         </div>

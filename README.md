@@ -15,9 +15,10 @@ pnpm dev
 
 ```sh
 pnpm test          # 路由、数据完整性、状态累计和备份校验
-pnpm build         # TypeScript 检查与生产构建
+pnpm build         # 城市数据格式、TypeScript 检查与生产构建
 pnpm preview       # 预览 dist 产物
 pnpm format:check  # 格式检查
+pnpm format:city   # 城市 JSON 专用格式：一条记录一行
 ```
 
 `dist/` 可部署到任意静态站点服务。无需 API Key、数据库或后端。字体随应用打包，浏览器运行时不依赖外部地图接口或字体服务。
@@ -38,6 +39,10 @@ iOS 使用 Swift Package Manager。环境要求、单平台同步、原生构建
 
 ## 已实现
 
+- 简体中文与英国英语（`en-GB`）界面，自动匹配浏览器语言，并可在数据管理中切换和保存。
+- 北京、上海带“官方维护”标识并提供官方英文站名；扩展城市支持具名用户贡献，站点可只提供当地语言或英文名称。
+- 城市名必填中文和英文，可补充当地语言名称（如首尔 / Seoul / 서울）；站点允许只提供英文、中文或当地语言名称。
+
 - 上海 **22 条线路、425 个独立站点、520 个区间**，包括机场联络线、磁浮线、金山铁路（含莘庄站）。
 - 北京 **28 条线路、422 个独立站点、514 个区间**，包括亦庄 T1 有轨电车、西郊线、首都机场线、大兴机场线；不包括市郊铁路。
 - SVG 扁平变形线网图，可拖动、滚轮缩放、双指缩放、全网适配、线路筛选、站点搜索。站名在缩放时自动避让。
@@ -54,6 +59,8 @@ iOS 使用 Swift Package Manager。环境要求、单平台同步、原生构建
 ## 扩展城市
 
 完整格式、最小示例和扩展步骤见 [城市数据协议](docs/city-data.md)。复制 [示例 JSON](docs/city.example.json)，填写站点、线路和相邻区间，再在 `src/data/index.ts` 注册即可。地图、路径算法、足迹统计、备份无需修改。
+
+每座城市的名称、站点中英文名、线路、来源与贡献者统一维护在 `src/data/<城市>.json`，不需要单独的翻译文件。贡献数据必须运行 `pnpm format:city`，采用“一条站点、线路或区间记录一行”的专用格式；构建和 PR 工作流会检查所有城市 JSON，详见[强制格式规则](docs/city-data.md#必须遵循的-json-格式)。站点、线路全称使用带语言标签的 `names` 列表，线路简称使用 `shortNames`，每个列表至少一项即可。北京和上海也使用同一协议；未来贡献城市的站名不必双语齐全，但城市名必须同时提供中文和英文。
 
 ## 数据与实现边界
 
@@ -77,6 +84,7 @@ src/
   types.ts                   城市、区间、足迹协议
   styles.css                 TDesign 主题与响应式布局
 scripts/import-amap.mjs       开发期数据转换器
+scripts/format-city-data.mjs  城市数据专用格式器与检查
 capacitor.config.ts           原生应用标识、Web 资源目录和平台配置
 ios/                         Xcode 工程与 Swift Package Manager 配置
 android/                     Android Studio 工程与 Gradle Wrapper

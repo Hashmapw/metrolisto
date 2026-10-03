@@ -150,7 +150,7 @@ export function searchStations(network: Network, query: string, transferOnly = f
     (s) =>
       (!transferOnly || isTransferStation(network, s.id)) &&
       (!normalized ||
-        [s.name, s.en ?? '', ...(s.aliases ?? [])].some((v) =>
+        [...s.names.map((name) => name.value), ...(s.aliases ?? [])].some((v) =>
           v.toLowerCase().replace(/\s/g, '').includes(normalized),
         )),
   );

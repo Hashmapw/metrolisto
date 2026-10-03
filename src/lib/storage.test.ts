@@ -1,3 +1,4 @@
+import { localisedName } from './i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cities } from '../data';
 import { createNetwork, findRoute } from './network';
@@ -11,7 +12,7 @@ import {
 import type { Journey } from '../types';
 
 const network = createNetwork(cities[0]);
-const id = (name: string) => cities[0].stations.find((s) => s.name === name)!.id;
+const id = (name: string) => cities[0].stations.find((s) => localisedName(s, 'zh-CN') === name)!.id;
 const journey: Journey = {
   ...findRoute(network, id('徐家汇'), id('陆家嘴'), [id('人民广场')])!,
   id: 'trip-1',

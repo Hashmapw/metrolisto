@@ -1,5 +1,6 @@
 node_modules
 dist
 pnpm-lock.yaml
-src/data/shanghai.json
-src/data/beijing.json
+# City data uses scripts/format-city-data.mjs (one record per line).
+src/data/**/*.json
+docs/city.example.json

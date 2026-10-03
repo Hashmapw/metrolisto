@@ -5,9 +5,30 @@ const fail = (message: string): never => {
 };
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
-const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length < 200;
+const text = (v: unknown): v is string =>
+  typeof v === 'string' && v.trim().length > 0 && v.length < 200;
 const point = (v: unknown) =>
   Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+const languageTag = (v: unknown): v is string => {
+  if (!text(v)) return false;
+  try {
+    return Intl.getCanonicalLocales(v).length === 1;
+  } catch {
+    return false;
+  }
+};
+
+function validateNames(value: unknown, context: string) {
+  if (!Array.isArray(value) || !value.length) fail(`${context}至少需要一个名称`);
+  const languages = new Set<string>();
+  for (const entry of value as unknown[]) {
+    if (!object(entry) || !languageTag(entry.language) || !text(entry.value))
+      fail(`${context}名称或语言标签无效`);
+    const language = Intl.getCanonicalLocales((entry as { language: string }).language)[0];
+    if (languages.has(language)) fail(`${context}名称语言重复：${language}`);
+    languages.add(language);
+  }
+}
 
 export function validateCity(value: unknown): CityData {
   if (
@@ -15,23 +36,39 @@ export function validateCity(value: unknown): CityData {
     value.schemaVersion !== 1 ||
     !text(value.id) ||
     !/^[a-z0-9-]+$/.test(value.id) ||
-    !text(value.name) ||
-    !text(value.en) ||
+    !text(value.zhName) ||
+    !text(value.enName) ||
     !text(value.updatedAt) ||
     !text(value.description) ||
     !point(value.center)
   )
     fail('基本信息不完整');
   const city = value as unknown as CityData;
+  if (
+    city.localName !== undefined &&
+    (!object(city.localName) || !text(city.localName.name) || !languageTag(city.localName.language))
+  )
+    fail('当地语言城市名或语言标签无效');
   if (![city.stations, city.lines, city.segments, city.sources].every(Array.isArray))
     fail('缺少 stations、lines、segments 或 sources');
   if (!city.stations.length || !city.lines.length || !city.segments.length) fail('线网不能为空');
+  if (city.attribution !== undefined) {
+    const credit = city.attribution;
+    if (
+      !object(credit) ||
+      !['official', 'community'].includes(credit.kind) ||
+      (credit.kind === 'community' && !text(credit.name))
+    )
+      fail('城市贡献者信息无效');
+  }
+  if (city.descriptionEn !== undefined && !text(city.descriptionEn)) fail('英文运营范围说明无效');
   const stations = new Set<string>(),
     lines = new Set<string>(),
     segments = new Set<string>();
   for (const s of city.stations) {
-    if (!object(s) || !text(s.id) || !text(s.name) || !point([s.x, s.y]) || stations.has(s.id))
+    if (!object(s) || !text(s.id) || !point([s.x, s.y]) || stations.has(s.id))
       fail('站点 ID 重复或坐标无效');
+    validateNames(s.names, `站点 ${s.id} `);
     if (s.aliases && (!Array.isArray(s.aliases) || !s.aliases.every(text))) fail('站点别名无效');
     stations.add(s.id);
   }
@@ -39,20 +76,20 @@ export function validateCity(value: unknown): CityData {
     if (
       !object(l) ||
       !text(l.id) ||
-      !text(l.name) ||
-      !text(l.shortName) ||
       !/^#[0-9a-f]{6}$/i.test(l.color) ||
       !['metro', 'tram', 'rail', 'maglev'].includes(l.kind) ||
       lines.has(l.id)
     )
       fail('线路信息无效');
+    validateNames(l.names, `线路 ${l.id} `);
+    validateNames(l.shortNames, `线路 ${l.id} 简称`);
     if (
       !Array.isArray(l.stationIds) ||
       l.stationIds.length < 2 ||
       l.stationIds.some((id) => !stations.has(id)) ||
       new Set(l.stationIds).size !== l.stationIds.length
     )
-      fail(`${l.name} 的站点引用无效`);
+      fail(`${l.id} 的站点引用无效`);
     lines.add(l.id);
   }
   for (const s of city.segments) {
@@ -98,6 +135,7 @@ export function validateCity(value: unknown): CityData {
     if (
       !object(source) ||
       !text(source.title) ||
+      (source.titleEn !== undefined && !text(source.titleEn)) ||
       typeof source.url !== 'string' ||
       !/^https?:\/\//.test(source.url)
     )

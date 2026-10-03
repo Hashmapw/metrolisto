@@ -1,3 +1,4 @@
+import { useLocale } from './LocaleProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Focus, LocateFixed, Maximize2, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { isTransferStation, type Network } from '../lib/network';
@@ -38,6 +39,7 @@ export default function MetroMap({
   onUnlightStation,
   onSetEndpoint,
 }: Props) {
+  const { locale, t, name } = useLocale();
   const { city } = network;
   const frame = useRef<HTMLDivElement>(null),
     svgRef = useRef<SVGSVGElement>(null);
@@ -160,7 +162,11 @@ export default function MetroMap({
       })
       .flatMap((s) => {
         if (activeLine && !network.lineById.get(activeLine)!.stationIds.includes(s.id)) return [];
-        const w = s.name.length * fontSize,
+        const w =
+            Array.from(name(s)).reduce(
+              (width, char) => width + (/[^\x00-\x7F]/.test(char) ? 1 : 0.62),
+              0,
+            ) * fontSize,
           h = fontSize * 1.3,
           gap = 12;
         const directions = [
@@ -200,6 +206,8 @@ export default function MetroMap({
     network,
     height,
     scale,
+    locale,
+    name,
   ]);
 
   const zoom = (factor: number) =>
@@ -227,7 +235,7 @@ export default function MetroMap({
         className="network-svg"
         viewBox={`${view.x - view.width / 2} ${view.y - height / 2} ${view.width} ${height}`}
         role="group"
-        aria-label={`${city.name}地铁示意图，可拖动和缩放，点击站点单独点亮`}
+        aria-label={t('{0}地铁示意图，可拖动和缩放，点击站点单独点亮', name(city))}
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
@@ -323,7 +331,7 @@ export default function MetroMap({
               letterSpacing="8"
               transform="rotate(-48 1755 1510)"
             >
-              黄浦江
+              {t('黄浦江')}
             </text>
           </g>
         )}
@@ -384,7 +392,8 @@ export default function MetroMap({
                     strokeWidth={Math.max(1.5, scale)}
                   >
                     <title>
-                      {a.name} → {b.name} · 单向运行
+                      {name(a)} → {name(b)}
+                      {t('· 单向运行')}
                     </title>
                   </path>
                 )}
@@ -413,7 +422,7 @@ export default function MetroMap({
                 role="button"
                 tabIndex={canSelect(s) ? 0 : -1}
                 aria-disabled={!canSelect(s)}
-                aria-label={`点亮站点 ${s.name}`}
+                aria-label={t('点亮站点 {0}', name(s))}
                 onClick={(e) => {
                   // Assistive technologies can dispatch a click without pointer events.
                   if (e.detail === 0) {
@@ -432,17 +441,13 @@ export default function MetroMap({
                 opacity={opacity}
               >
                 <title>
-                  {s.name} ·{' '}
-                  {network.stationLines
-                    .get(s.id)!
-                    .map((l) => l.name)
-                    .join(' / ')}
+                  {name(s)} · {network.stationLines.get(s.id)!.map(name).join(' / ')}
                   {state?.visited
-                    ? ' · 已上下车'
+                    ? t(' · 已上下车')
                     : state?.transferred
-                      ? ' · 已换乘'
+                      ? t(' · 已换乘')
                       : state?.passed
-                        ? ' · 已途经'
+                        ? t(' · 已途经')
                         : ''}
                 </title>
                 <circle cx={s.x} cy={s.y} r={Math.max(r + 7, scale * 9)} fill="transparent" />
@@ -488,7 +493,7 @@ export default function MetroMap({
               paintOrder="stroke"
               strokeLinejoin="round"
             >
-              {s.name}
+              {name(s)}
             </text>
           ))}
         </g>
@@ -497,28 +502,28 @@ export default function MetroMap({
         <div className="station-popover">
           <button
             className="icon-btn small"
-            aria-label="关闭站点详情"
+            aria-label={t('关闭站点详情')}
             onClick={() => setSelected(null)}
           >
             <X size={15} />
           </button>
-          <h3>{selected.name}</h3>
+          <h3>{name(selected)}</h3>
           <div className="station-lines">
             {network.stationLines.get(selected.id)!.map((l) => (
               <span className="line-tag" key={l.id} style={{ background: l.color }}>
-                {l.shortName}
+                {name({ names: l.shortNames })}
               </span>
             ))}
           </div>
           <p className={`station-status ${selectedLit ? 'lit' : ''}`}>
             <span className="dot" />
             {selectedState?.visited
-              ? '已点亮 · 上下车过'
+              ? t('已点亮 · 上下车过')
               : selectedState?.transferred
-                ? '已点亮 · 换乘过'
+                ? t('已点亮 · 换乘过')
                 : selectedState?.passed
-                  ? '已点亮 · 途经过'
-                  : '尚未点亮 · 点击站点即可单独点亮'}
+                  ? t('已点亮 · 途经过')
+                  : t('尚未点亮 · 点击站点即可单独点亮')}
           </p>
           <div className="popover-actions">
             <button
@@ -527,7 +532,7 @@ export default function MetroMap({
                 setSelected(null);
               }}
             >
-              从这里出发
+              {t('从这里出发')}
             </button>
             <button
               onClick={() => {
@@ -535,12 +540,13 @@ export default function MetroMap({
                 setSelected(null);
               }}
             >
-              到这里去
+              {t('到这里去')}
             </button>
           </div>
           {manualStationIds.has(selected.id) && (
             <button className="popover-undo" onClick={() => onUnlightStation(selected)}>
-              <RotateCcw size={12} /> 取消单站点亮
+              <RotateCcw size={12} />
+              {t('取消单站点亮')}
             </button>
           )}
         </div>
@@ -548,8 +554,8 @@ export default function MetroMap({
       <div className="map-ctl">
         <button
           className="ctl"
-          aria-label={expanded ? '退出全屏地图' : '展开地图'}
-          title={expanded ? '退出全屏' : '全屏'}
+          aria-label={expanded ? t('退出全屏地图') : t('展开地图')}
+          title={expanded ? t('退出全屏') : t('全屏')}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? <X size={18} /> : <Maximize2 size={16} />}
@@ -557,25 +563,35 @@ export default function MetroMap({
         <button
           className={labelsOn ? 'ctl active' : 'ctl'}
           aria-pressed={labelsOn}
-          aria-label="显示站名"
-          title="站名"
+          aria-label={t('显示站名')}
+          title={t('站名')}
           onClick={() => setLabelsOn(!labelsOn)}
         >
           <span className="aa">Aa</span>
         </button>
         <div className="ctl-group">
-          <button className="zoom" aria-label="放大地图" title="放大" onClick={() => zoom(0.78)}>
+          <button
+            className="zoom"
+            aria-label={t('放大地图')}
+            title={t('放大')}
+            onClick={() => zoom(0.78)}
+          >
             <Plus size={18} />
           </button>
-          <button className="zoom" aria-label="缩小地图" title="缩小" onClick={() => zoom(1.28)}>
+          <button
+            className="zoom"
+            aria-label={t('缩小地图')}
+            title={t('缩小')}
+            onClick={() => zoom(1.28)}
+          >
             <Minus size={18} />
           </button>
-          <button aria-label="查看完整线网" title="完整线网" onClick={() => fit()}>
+          <button aria-label={t('查看完整线网')} title={t('完整线网')} onClick={() => fit()}>
             <Focus size={17} />
           </button>
           <button
-            aria-label="回到市中心"
-            title="回到市中心"
+            aria-label={t('回到市中心')}
+            title={t('回到市中心')}
             onClick={() => setView({ x: city.center[0], y: city.center[1], width: 2050 })}
           >
             <LocateFixed size={17} />

@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n';
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -6,6 +7,7 @@ import { Share } from '@capacitor/share';
 export async function downloadBackup(
   contents: string,
   filename = `MetroListo-backup-${new Date().toISOString().slice(0, 10)}.json`,
+  locale: Locale = 'zh-CN',
 ): Promise<'native' | 'web'> {
   if (Capacitor.isNativePlatform()) {
     const { uri } = await Filesystem.writeFile({
@@ -14,7 +16,11 @@ export async function downloadBackup(
       directory: Directory.Cache,
       encoding: Encoding.UTF8,
     });
-    await Share.share({ title: '全地铁足迹备份', files: [uri], dialogTitle: '保存或分享备份' });
+    await Share.share({
+      title: translate(locale, '全地铁足迹备份'),
+      files: [uri],
+      dialogTitle: translate(locale, '保存或分享备份'),
+    });
     // Android recipients may read after the share promise resolves. Let the OS clear its cache.
     return 'native';
   }

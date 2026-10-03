@@ -1,3 +1,4 @@
+import { useLocale } from './components/LocaleProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dialog, Popup, Segmented, TabBar, TabBarItem } from 'tdesign-mobile-react';
 import {
@@ -28,6 +29,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { contributionLabel } from './lib/i18n';
 import { downloadBackup } from './lib/backup';
 import { cities } from './data';
 import { createNetwork, findRoute, routeGroups } from './lib/network';
@@ -42,15 +44,10 @@ import {
 import type { Journey, Route, SavedData, Station } from './types';
 import MetroMap from './components/MetroMap';
 import StationPicker from './components/StationPicker';
+import CityNames from './components/CityNames';
 
 type Page = 'map' | 'journal' | 'lines';
 const LAST_CITY_KEY = 'metrolisto.last-city.v1';
-const nav = [
-  { id: 'map' as const, label: '探索地图', icon: MapIcon },
-  { id: 'journal' as const, label: '我的足迹', icon: Footprints },
-  { id: 'lines' as const, label: '线路收藏', icon: Layers2 },
-];
-const lineKind = { metro: '城市地铁', rail: '市域铁路', tram: '有轨电车', maglev: '磁浮列车' };
 
 function useMedia(query: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -65,6 +62,19 @@ function useMedia(query: string) {
 }
 
 export default function App() {
+  const { locale, setLocale, t, name } = useLocale();
+  const nav = [
+    { id: 'map' as const, label: t('探索地图'), icon: MapIcon },
+    { id: 'journal' as const, label: t('我的足迹'), icon: Footprints },
+    { id: 'lines' as const, label: t('线路收藏'), icon: Layers2 },
+  ];
+  const lineKind = {
+    metro: t('城市地铁'),
+    rail: t('市域铁路'),
+    tram: t('有轨电车'),
+    maglev: t('磁浮列车'),
+  };
+
   const [initial] = useState(() => readSavedData(cities));
   const showSuggestion = !Object.values(initial.data.cities).some((records) => records.length > 0);
   const [saved, setSaved] = useState<SavedData>(initial.data);
@@ -110,7 +120,7 @@ export default function App() {
   );
   const percentage = ((progress.stations.size / city.stations.length) * 100).toFixed(1);
   const trips = journeys.filter((j) => j.kind === 'trip');
-  const displayName = (id: string) => network.stationById.get(id)?.name ?? id;
+  const displayName = (id: string) => name(network.stationById.get(id)) || id;
   const suggestion = useMemo(() => {
     const preferred =
       city.id === 'shanghai'
@@ -119,13 +129,20 @@ export default function App() {
           ? ['天安门东', '环球度假区']
           : [];
     const line = city.lines[0];
-    const start = city.stations.find((s) => s.name === preferred[0])?.id ?? line.stationIds[0];
+    const start =
+      city.stations.find((s) =>
+        s.names.some((n) => n.language === 'zh-CN' && n.value === preferred[0]),
+      )?.id ?? line.stationIds[0];
     const end =
-      city.stations.find((s) => s.name === preferred[1])?.id ??
-      line.stationIds[Math.min(4, line.stationIds.length - 1)];
+      city.stations.find((s) =>
+        s.names.some((n) => n.language === 'zh-CN' && n.value === preferred[1]),
+      )?.id ?? line.stationIds[Math.min(4, line.stationIds.length - 1)];
     return { start, end };
   }, [city]);
 
+  useEffect(() => {
+    setToast(null);
+  }, [locale]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 5500);
@@ -154,7 +171,7 @@ export default function App() {
 
   const commit = (next: SavedData, allowRecovery = false) => {
     if (storageBlocked && !allowRecovery) {
-      setToast({ text: '原始记录无法读取，请先在数据管理中导出并恢复备份。' });
+      setToast({ text: t('原始记录无法读取，请先在数据管理中导出并恢复备份。') });
       return false;
     }
     try {
@@ -165,7 +182,7 @@ export default function App() {
       return true;
     } catch {
       setStorageError('保存失败：浏览器存储不可用或已满。请导出备份，释放空间后重试。');
-      setToast({ text: '未能保存记录，请检查浏览器存储空间。' });
+      setToast({ text: t('未能保存记录，请检查浏览器存储空间。') });
       return false;
     }
   };
@@ -178,7 +195,7 @@ export default function App() {
         cities: { ...saved.cities, [cityId]: journeys.filter((j) => j.id !== id) },
       })
     )
-      setToast({ text: '记录已撤销，相关足迹已重新计算' });
+      setToast({ text: t('记录已撤销，相关足迹已重新计算') });
     setDeleteId(null);
   };
   const invalidate = () => {
@@ -211,7 +228,7 @@ export default function App() {
   };
   const lightStation = (s: Station) => {
     if (progress.stations.get(s.id)?.visited) {
-      setToast({ text: `${s.name}已经点亮，上下车足迹已记录` });
+      setToast({ text: t('{0}已经点亮，上下车足迹已记录', name(s)) });
       return;
     }
     const journey: Journey = {
@@ -224,7 +241,7 @@ export default function App() {
       transferIds: [],
     };
     if (addJourney(journey))
-      setToast({ text: `已点亮「${s.name}」· 未点亮区间`, undoId: journey.id });
+      setToast({ text: t('已点亮「{0}」· 未点亮区间', name(s)), undoId: journey.id });
   };
   const unlightStation = (s: Station) => {
     const remaining = removeStationLighting(journeys, s.id);
@@ -232,7 +249,7 @@ export default function App() {
     if (commit({ ...saved, cities: { ...saved.cities, [cityId]: remaining } })) {
       const hasJourney = getProgress(remaining).stations.has(s.id);
       setToast({
-        text: `已取消「${s.name}」的单站点亮${hasJourney ? '，行程足迹已保留' : ''}`,
+        text: t('已取消「{0}」的单站点亮{1}', name(s), hasJourney ? t('，行程足迹已保留') : ''),
       });
     }
   };
@@ -270,7 +287,11 @@ export default function App() {
     };
     if (addJourney(journey)) {
       setToast({
-        text: `旅程已收集，点亮 ${preview.stationIds.length} 站、${preview.segmentIds.length} 个区间`,
+        text: t(
+          '旅程已收集，点亮 {0} 站、{1} 个区间',
+          preview.stationIds.length,
+          preview.segmentIds.length,
+        ),
         undoId: journey.id,
       });
       setPreview(null);
@@ -290,12 +311,12 @@ export default function App() {
   };
   const importBackup = async (file: File) => {
     try {
-      if (file.size > 10 * 1024 * 1024) throw new Error('备份文件不得超过 10 MB');
+      if (file.size > 10 * 1024 * 1024) throw new Error(t('备份文件不得超过 10 MB'));
       const imported = validateBackup(JSON.parse(await file.text()), cities, true);
       const next = mergeBackups(saved, imported);
-      if (commit(next, true)) setToast({ text: '备份已恢复，与现有记录合并完成' });
+      if (commit(next, true)) setToast({ text: t('备份已恢复，与现有记录合并完成') });
     } catch (e) {
-      setToast({ text: e instanceof Error ? e.message : '备份读取失败，请检查文件格式' });
+      setToast({ text: e instanceof Error ? t(e.message) : t('备份读取失败，请检查文件格式') });
     }
   };
   const exportBackup = async () => {
@@ -303,24 +324,29 @@ export default function App() {
     exporting.current = true;
     try {
       const raw = storageBlocked ? localStorage.getItem(STORAGE_KEY) : null;
-      if (storageBlocked && raw === null) throw new Error('无法读取原始记录');
+      if (storageBlocked && raw === null) throw new Error(t('无法读取原始记录'));
       const outcome = await downloadBackup(
         raw ?? JSON.stringify(saved, null, 2),
         raw !== null ? 'MetroListo-original-recovery.json' : undefined,
+        locale,
       );
       setToast({
-        text: outcome === 'native' ? '分享面板已关闭，请确认已保存备份' : '已请求浏览器下载备份',
+        text:
+          outcome === 'native' ? t('分享面板已关闭，请确认已保存备份') : t('已请求浏览器下载备份'),
       });
     } catch (error) {
       setToast({
-        text: error instanceof Error ? `备份未导出：${error.message}` : '备份未导出或分享已取消',
+        text:
+          error instanceof Error
+            ? t('备份未导出：{0}', t(error.message))
+            : t('备份未导出或分享已取消'),
       });
     } finally {
       exporting.current = false;
     }
   };
   const shortDate = (date: string) =>
-    new Date(date).toLocaleString('zh-CN', {
+    new Date(date).toLocaleString(locale, {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
@@ -333,11 +359,16 @@ export default function App() {
     </button>
   );
   const pageCopy = {
-    map: { title: '探索地图', sub: '点击站点单独点亮，或记录一段完整旅程。' },
-    journal: { title: '我的足迹', sub: '单独点亮与完整旅程，都收藏在这里。' },
+    map: { title: t('探索地图'), sub: t('点击站点单独点亮，或记录一段完整旅程。') },
+    journal: { title: t('我的足迹'), sub: t('单独点亮与完整旅程，都收藏在这里。') },
     lines: {
-      title: '线路收藏',
-      sub: `${city.description} · 已乘坐 ${progress.lines.size} / ${city.lines.length} 条线路`,
+      title: t('线路收藏'),
+      sub: t(
+        '{0} · 已乘坐 {1} / {2} 条线路',
+        locale === 'en-GB' ? (city.descriptionEn ?? city.description) : city.description,
+        progress.lines.size,
+        city.lines.length,
+      ),
     },
   }[page];
 
@@ -346,7 +377,8 @@ export default function App() {
     <section className="hero">
       <div className="hero-body">
         <span className="hero-label">
-          <MapPin size={13} /> {city.name} · 探索度
+          <MapPin size={13} /> {name(city)}
+          {t('· 探索度')}
         </span>
         <div className="hero-number">
           {percentage}
@@ -354,10 +386,10 @@ export default function App() {
         </div>
         <p>
           {progress.stations.size === 0
-            ? '你的城市故事，从熟悉的那一站开始。'
+            ? t('你的城市故事，从熟悉的那一站开始。')
             : stationRatio === 1
-              ? '整座城市，都有你的足迹。'
-              : `还有 ${city.stations.length - progress.stations.size} 个站点，等你去发现。`}
+              ? t('整座城市，都有你的足迹。')
+              : t('还有 {0} 个站点，等你去发现。', city.stations.length - progress.stations.size)}
         </p>
         <div className="hero-track" aria-hidden="true">
           <i style={{ width: `${Math.max(stationRatio * 100, 0)}%` }} />
@@ -376,19 +408,25 @@ export default function App() {
       <div className="hero-stats">
         <div>
           <strong>{progress.stations.size}</strong>
-          <span>/ {city.stations.length} 站点</span>
+          <span>
+            / {city.stations.length} {t('站点')}
+          </span>
         </div>
         <div>
           <strong>{progress.segments.size}</strong>
-          <span>/ {city.segments.length} 区间</span>
+          <span>
+            / {city.segments.length} {t('区间')}
+          </span>
         </div>
         <div>
           <strong>{progress.lines.size}</strong>
-          <span>/ {city.lines.length} 线路</span>
+          <span>
+            / {city.lines.length} {t('线路')}
+          </span>
         </div>
         <div>
           <strong>{trips.length}</strong>
-          <span>次旅程</span>
+          <span>{locale === 'en-GB' && trips.length === 1 ? 'journey' : t('次旅程')}</span>
         </div>
       </div>
     </section>
@@ -401,7 +439,7 @@ export default function App() {
           <a
             className="rail-logo"
             href="#"
-            aria-label="全地铁首页"
+            aria-label={t('全地铁首页')}
             onClick={(e) => {
               e.preventDefault();
               setPage('map');
@@ -409,7 +447,7 @@ export default function App() {
           >
             <img src="/favicon.svg" alt="" />
           </a>
-          <nav className="rail-nav" aria-label="主导航">
+          <nav className="rail-nav" aria-label={t('主导航')}>
             {nav.map((item) => (
               <button
                 key={item.id}
@@ -425,11 +463,11 @@ export default function App() {
           <div className="rail-bottom">
             <button className="rail-item" onClick={() => setHelpOpen(true)}>
               <CircleHelp size={22} strokeWidth={1.75} />
-              <span>使用指南</span>
+              <span>{t('使用指南')}</span>
             </button>
             <button className="rail-item" onClick={() => setSettingsOpen(true)}>
               <Settings2 size={22} strokeWidth={1.75} />
-              <span>数据管理</span>
+              <span>{t('数据管理')}</span>
             </button>
           </div>
         </aside>
@@ -438,32 +476,40 @@ export default function App() {
         <header className="topbar">
           <div className="brand">
             <img src="/favicon.svg" alt="" />
-            全地铁
-            <small>MetroListo</small>
+            {t('全地铁')}
+            {locale === 'zh-CN' && <small>MetroListo</small>}
           </div>
-          <button className="city-switch" onClick={() => setCityOpen(true)} aria-label="切换城市">
+          <button
+            className="city-switch"
+            onClick={() => setCityOpen(true)}
+            aria-label={t('切换城市')}
+          >
             <MapPin size={15} />
-            {city.name}
+            {name(city)}
             <ChevronDown size={14} />
           </button>
           <div className="topbar-actions">
             <span className="storage-state">
               <span className={`dot ${storageError ? 'error' : ''}`} />
-              {storageError ? '存储异常' : '足迹仅保存在此设备'}
+              {storageError ? t('存储异常') : t('足迹仅保存在此设备')}
             </span>
             {!isMobile && (
-              <button className="icon-btn" aria-label="导出足迹备份" onClick={exportBackup}>
+              <button className="icon-btn" aria-label={t('导出足迹备份')} onClick={exportBackup}>
                 <Download size={19} strokeWidth={1.75} />
               </button>
             )}
             {isMobile && (
-              <button className="icon-btn" aria-label="使用指南" onClick={() => setHelpOpen(true)}>
+              <button
+                className="icon-btn"
+                aria-label={t('使用指南')}
+                onClick={() => setHelpOpen(true)}
+              >
                 <CircleHelp size={20} strokeWidth={1.75} />
               </button>
             )}
             <button
               className="icon-btn"
-              aria-label="数据管理"
+              aria-label={t('数据管理')}
               onClick={() => setSettingsOpen(true)}
             >
               <Settings2 size={20} strokeWidth={1.75} />
@@ -477,15 +523,19 @@ export default function App() {
               <p>{pageCopy.sub}</p>
             </div>
           </div>
-          {(storageError || !!saved.quarantined?.length) && (
+          {(storageError || !!(saved.quarantined?.length ?? 0)) && (
             <div className="banner" role="alert">
               <AlertCircle size={18} />
               <span>
-                {storageError ??
-                  `有 ${saved.quarantined?.length} 项记录暂不可用，原始内容已保留在备份中，其余足迹可正常记录。`}
+                {(storageError ? t(storageError) : null) ??
+                  t(
+                    '有 {0} 项记录暂不可用，原始内容已保留在备份中，其余足迹可正常记录。',
+                    saved.quarantined?.length ?? 0,
+                  )}
               </span>
               <button onClick={() => setSettingsOpen(true)}>
-                管理备份 <ArrowRight size={14} />
+                {t('管理备份')}
+                <ArrowRight size={14} />
               </button>
             </div>
           )}
@@ -495,9 +545,10 @@ export default function App() {
               <section className="card map-card">
                 {viewedJourney && (
                   <div className="active-line">
-                    正在查看已记录旅程
+                    {t('正在查看已记录旅程')}
                     <button onClick={() => setViewedJourney(null)}>
-                      <X size={13} /> 退出旅程查看
+                      <X size={13} />
+                      {t('退出旅程查看')}
                     </button>
                   </div>
                 )}
@@ -510,7 +561,8 @@ export default function App() {
                         value: 'mine',
                         label: (
                           <span className="seg-label">
-                            <Footprints size={14} /> 我的足迹
+                            <Footprints size={14} />
+                            {t('我的足迹')}
                           </span>
                         ),
                       },
@@ -518,7 +570,8 @@ export default function App() {
                         value: 'all',
                         label: (
                           <span className="seg-label">
-                            <Globe2 size={14} /> 城市线网
+                            <Globe2 size={14} />
+                            {t('城市线网')}
                           </span>
                         ),
                       },
@@ -529,8 +582,8 @@ export default function App() {
                   <StationPicker
                     network={network}
                     value=""
-                    label="搜索地图站点"
-                    placeholder="搜索站点"
+                    label={t('搜索地图站点')}
+                    placeholder={t('搜索站点')}
                     variant="search"
                     onChange={(id) => {
                       setViewedJourney(null);
@@ -541,24 +594,25 @@ export default function App() {
                   <button
                     className={`filter-btn ${activeLine ? 'active' : ''}`}
                     onClick={() => setLineOpen(true)}
-                    aria-label="筛选地铁线路"
+                    aria-label={t('筛选地铁线路')}
                   >
                     {activeLine ? (
                       <i style={{ background: network.lineById.get(activeLine)?.color }} />
                     ) : (
                       <Layers2 size={16} />
                     )}
-                    <span>{activeLine ? network.lineById.get(activeLine)?.name : '线路'}</span>
+                    <span>{activeLine ? name(network.lineById.get(activeLine)) : t('线路')}</span>
                     <ChevronDown size={14} />
                   </button>
                 </div>
                 {activeLine && (
                   <div className="active-line">
                     <i style={{ background: network.lineById.get(activeLine)!.color }} />
-                    仅显示 <strong>{network.lineById.get(activeLine)!.name}</strong>
+                    {t('仅显示')}
+                    <strong>{name(network.lineById.get(activeLine)!)}</strong>
                     <button onClick={() => setActiveLine(null)}>
                       <X size={13} />
-                      显示全部线路
+                      {t('显示全部线路')}
                     </button>
                   </div>
                 )}
@@ -576,32 +630,32 @@ export default function App() {
                   onSetEndpoint={setEndpoint}
                 />
                 <div className="map-foot">
-                  <div className="legend" aria-label="足迹图例">
+                  <div className="legend" aria-label={t('足迹图例')}>
                     <span>
                       <i className="legend-dot" />
-                      未点亮
+                      {t('未点亮')}
                     </span>
                     <span>
                       <i className="legend-dot passed" />
-                      途经过
+                      {t('途经过')}
                     </span>
                     <span>
                       <i className="legend-dot transfer" />
-                      换乘过
+                      {t('换乘过')}
                     </span>
                     <span>
                       <i className="legend-dot visited" />
-                      上下车过
+                      {t('上下车过')}
                     </span>
                     <span>
                       <i className="legend-line" />
-                      已乘区间
+                      {t('已乘区间')}
                     </span>
                   </div>
                   <button
                     className="icon-btn small"
                     onClick={() => setHelpOpen(true)}
-                    aria-label="查看点亮规则"
+                    aria-label={t('查看点亮规则')}
                   >
                     <CircleHelp size={16} />
                   </button>
@@ -609,7 +663,7 @@ export default function App() {
                 <div className="line-strip">
                   {city.lines.map((l) => (
                     <button
-                      title={l.name}
+                      title={name(l)}
                       key={l.id}
                       className={activeLine === l.id ? 'active' : ''}
                       onClick={() => {
@@ -619,7 +673,7 @@ export default function App() {
                       }}
                     >
                       <i style={{ background: l.color }} />
-                      {l.shortName}
+                      {name({ names: l.shortNames })}
                     </button>
                   ))}
                 </div>
@@ -628,8 +682,8 @@ export default function App() {
                 <section className="card planner" ref={planner}>
                   <div className="planner-head">
                     <div>
-                      <h2>记录一段旅程</h2>
-                      <p>先预览路线，再确认点亮沿途</p>
+                      <h2>{t('记录一段旅程')}</h2>
+                      <p>{t('先预览路线，再确认点亮沿途')}</p>
                     </div>
                   </div>
                   <form
@@ -642,7 +696,7 @@ export default function App() {
                       <div className="route-row">
                         <i className="start" />
                         <div>
-                          <label>上车站</label>
+                          <label>{t('上车站')}</label>
                           <StationPicker
                             network={network}
                             value={from}
@@ -650,8 +704,8 @@ export default function App() {
                               setFrom(id);
                               invalidate();
                             }}
-                            label="上车站"
-                            placeholder="从哪一站出发"
+                            label={t('上车站')}
+                            placeholder={t('从哪一站出发')}
                           />
                         </div>
                       </div>
@@ -659,7 +713,10 @@ export default function App() {
                         <div className="route-row" key={i}>
                           <i className="via" />
                           <div>
-                            <label>换乘站 {i + 1}</label>
+                            <label>
+                              {t('换乘站')}
+                              {i + 1}
+                            </label>
                             <StationPicker
                               network={network}
                               value={id}
@@ -668,14 +725,14 @@ export default function App() {
                                 setVia((v) => v.map((s, j) => (j === i ? next : s)));
                                 invalidate();
                               }}
-                              label={`换乘站${i + 1}`}
-                              placeholder="选择换乘站点"
+                              label={t('换乘站{0}', i + 1)}
+                              placeholder={t('选择换乘站点')}
                             />
                           </div>
                           <button
                             type="button"
                             className="remove"
-                            aria-label={`移除换乘站${i + 1}`}
+                            aria-label={t('移除换乘站{0}', i + 1)}
                             onClick={() => {
                               setVia((v) => v.filter((_, j) => j !== i));
                               invalidate();
@@ -688,7 +745,7 @@ export default function App() {
                       <div className="route-row">
                         <i className="end" />
                         <div>
-                          <label>下车站</label>
+                          <label>{t('下车站')}</label>
                           <StationPicker
                             network={network}
                             value={to}
@@ -696,15 +753,15 @@ export default function App() {
                               setTo(id);
                               invalidate();
                             }}
-                            label="下车站"
-                            placeholder="在哪一站停下"
+                            label={t('下车站')}
+                            placeholder={t('在哪一站停下')}
                           />
                         </div>
                       </div>
                       <button
                         type="button"
                         className="swap"
-                        aria-label="交换上车站和下车站"
+                        aria-label={t('交换上车站和下车站')}
                         onClick={() => {
                           setFrom(to);
                           setTo(from);
@@ -726,14 +783,14 @@ export default function App() {
                         }}
                       >
                         <Plus size={15} />
-                        添加换乘站
+                        {t('添加换乘站')}
                       </button>
                       <Segmented
                         className="pref-seg"
                         value={preference}
                         options={[
-                          { value: 'balanced', label: '综合推荐' },
-                          { value: 'transfers', label: '换乘最少' },
+                          { value: 'balanced', label: t('综合推荐') },
+                          { value: 'transfers', label: t('换乘最少') },
                         ]}
                         onChange={({ value }) => {
                           setPreference(value as typeof preference);
@@ -744,13 +801,13 @@ export default function App() {
                     {routeError && (
                       <p className="form-error" role="alert">
                         <AlertCircle size={14} />
-                        {routeError}
+                        {t(routeError)}
                       </p>
                     )}
                     {!preview && (
                       <Button block theme="primary" type="submit" className="plan-btn">
                         <RouteIcon size={17} />
-                        预览行程路线
+                        {t('预览行程路线')}
                       </Button>
                     )}
                   </form>
@@ -758,10 +815,15 @@ export default function App() {
                     <div className="route-preview">
                       <div className="preview-head">
                         <span>
-                          <CheckCircle2 size={15} /> 通路已找到
+                          <CheckCircle2 size={15} />
+                          {t('通路已找到')}
                         </span>
                         <b>
-                          {preview.stationIds.length} 站 · {preview.transferIds.length} 次换乘
+                          {t(
+                            '{0} 站 · 换乘次数：{1}',
+                            preview.stationIds.length,
+                            preview.transferIds.length,
+                          )}
                         </b>
                       </div>
                       <div className="itinerary">
@@ -774,10 +836,11 @@ export default function App() {
                                 {displayName(group.to)}
                               </strong>
                               <small>
-                                {network.lineById.get(group.lineId)!.name} · {group.stops} 个区间
+                                {name(network.lineById.get(group.lineId)!)} · {group.stops}{' '}
+                                {locale === 'en-GB' && group.stops === 1 ? 'section' : t('个区间')}
                               </small>
                               <details>
-                                <summary>查看沿途站点</summary>
+                                <summary>{t('查看沿途站点')}</summary>
                                 <p>{group.stationIds.map(displayName).join(' → ')}</p>
                               </details>
                             </div>
@@ -786,12 +849,14 @@ export default function App() {
                       </div>
                       <Button block theme="primary" className="plan-btn" onClick={confirmRoute}>
                         <Sparkles size={17} />
-                        确认行程，点亮沿途
+                        {t('确认行程，点亮沿途')}
                       </Button>
-                      <p className="preview-note">确认后记录上下车站、换乘站与全部途经区间</p>
+                      <p className="preview-note">
+                        {t('确认后记录上下车站、换乘站与全部途经区间')}
+                      </p>
                     </div>
                   ) : (
-                    <p className="planner-tip">最多可添加三个换乘站，换乘站需实际换车</p>
+                    <p className="planner-tip">{t('最多可添加三个换乘站，换乘站需实际换车')}</p>
                   )}
                 </section>
                 {hero}
@@ -804,21 +869,41 @@ export default function App() {
                   <div>
                     <h3>
                       {city.id === 'shanghai'
-                        ? '穿过江底，去看一眼陆家嘴'
+                        ? t('穿过江底，去看一眼陆家嘴')
                         : city.id === 'beijing'
-                          ? '沿着长安街，去赴一场奇遇'
-                          : '从熟悉的一站，开始新的探索'}
+                          ? t('沿着长安街，去赴一场奇遇')
+                          : t('从熟悉的一站，开始新的探索')}
                     </h3>
                     <p>
                       {city.id === 'shanghai'
-                        ? '人民广场 → 南京东路 → 陆家嘴'
+                        ? ['人民广场', '南京东路', '陆家嘴']
+                            .map((local) =>
+                              name(
+                                city.stations.find((station) =>
+                                  station.names.some(
+                                    (n) => n.language === 'zh-CN' && n.value === local,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .join(' → ')
                         : city.id === 'beijing'
-                          ? '天安门东 → 国贸 → 环球度假区'
+                          ? ['天安门东', '国贸', '环球度假区']
+                              .map((local) =>
+                                name(
+                                  city.stations.find((station) =>
+                                    station.names.some(
+                                      (n) => n.language === 'zh-CN' && n.value === local,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .join(' → ')
                           : `${displayName(suggestion.start)} → ${displayName(suggestion.end)}`}
                     </p>
                   </div>
                   <Button size="small" theme="primary" variant="outline" onClick={useSuggestion}>
-                    试一试
+                    {t('试一试')}
                   </Button>
                 </section>
               )}
@@ -828,12 +913,14 @@ export default function App() {
               <div className="panel-head">
                 <div>
                   <h2>
-                    全部记录 <span className="count">{journeys.length}</span>
+                    {t('全部记录')}
+                    <span className="count">{journeys.length}</span>
                   </h2>
-                  <p>点击记录查看详情，撤销后足迹会重新计算。</p>
+                  <p>{t('点击记录查看详情，撤销后足迹会重新计算。')}</p>
                 </div>
                 <Button size="small" variant="outline" onClick={exportBackup}>
-                  <Download size={14} /> 导出备份
+                  <Download size={14} />
+                  {t('导出备份')}
                 </Button>
               </div>
               {journeys.length ? (
@@ -855,15 +942,20 @@ export default function App() {
                         </h3>
                         <p>
                           {j.kind === 'trip'
-                            ? `${j.stationIds.length} 站 · ${j.segmentIds.length} 个区间 · ${j.transferIds.length} 次换乘`
-                            : '单站点亮 · 上下车过'}
+                            ? t(
+                                '{0} 站 · {1} 个区间 · {2} 次换乘',
+                                j.stationIds.length,
+                                j.segmentIds.length,
+                                j.transferIds.length,
+                              )
+                            : t('单站点亮 · 上下车过')}
                           {' · '}
                           {shortDate(j.createdAt)}
                         </p>
                       </button>
                       <button
                         className="icon-btn"
-                        aria-label={`撤销${displayName(j.stationIds[0])}记录`}
+                        aria-label={t('撤销{0}记录', displayName(j.stationIds[0]))}
                         onClick={() => setDeleteId(j.id)}
                       >
                         <Trash2 size={16} />
@@ -877,10 +969,10 @@ export default function App() {
                   <div className="empty-icon">
                     <Footprints size={30} />
                   </div>
-                  <h3>还没有足迹</h3>
-                  <p>在地图上点亮一个站点，或记录一段完整旅程。</p>
+                  <h3>{t('还没有足迹')}</h3>
+                  <p>{t('在地图上点亮一个站点，或记录一段完整旅程。')}</p>
                   <Button theme="primary" onClick={() => setPage('map')}>
-                    去探索地图
+                    {t('去探索地图')}
                   </Button>
                 </div>
               )}
@@ -908,21 +1000,17 @@ export default function App() {
                     >
                       <div className="line-card-top">
                         <span className="line-badge" style={{ background: line.color }}>
-                          {line.shortName}
+                          {name({ names: line.shortNames })}
                         </span>
                         <ArrowUpRight size={16} />
                       </div>
-                      <h3>{line.name}</h3>
-                      <p>
-                        {line.stationIds.length} 个站点 · {lineKind[line.kind]}
-                      </p>
+                      <h3>{name(line)}</h3>
+                      <p>{t('{0} 个站点 · {1}', line.stationIds.length, lineKind[line.kind])}</p>
                       <div className="meter">
                         <i style={{ width: `${ratio * 100}%`, background: line.color }} />
                       </div>
                       <div className="line-card-foot">
-                        <span>
-                          已点亮 {stationLit} / {line.stationIds.length} 站
-                        </span>
+                        <span>{t('已点亮 {0} / {1} 站', stationLit, line.stationIds.length)}</span>
                         <strong>{Math.round(ratio * 100)}%</strong>
                       </div>
                     </button>
@@ -932,11 +1020,12 @@ export default function App() {
             </section>
           )}
           <footer className="footer">
-            <span>全地铁 MetroListo · 从一站，到一城。</span>
+            <span>{t('全地铁 MetroListo · 从一站，到一城。')}</span>
             <span>
-              示意线网，非实时导航
+              {t('示意线网，非实时导航')}
               <button onClick={() => setHelpOpen(true)}>
-                数据说明 <ArrowUpRight size={13} />
+                {t('数据说明')}
+                <ArrowUpRight size={13} />
               </button>
             </span>
           </footer>
@@ -969,10 +1058,10 @@ export default function App() {
         <div className="sheet">
           <div className="sheet-head">
             <div>
-              <h2>选择城市</h2>
-              <p>每座城市的足迹独立记录，切换不会丢失数据。</p>
+              <h2>{t('选择城市')}</h2>
+              <p>{t('每座城市的足迹独立记录，切换不会丢失数据。')}</p>
             </div>
-            {closeButton('关闭城市选择', () => setCityOpen(false))}
+            {closeButton(t('关闭城市选择'), () => setCityOpen(false))}
           </div>
           {cities.map((c) => (
             <button
@@ -985,11 +1074,11 @@ export default function App() {
               </span>
               <div>
                 <strong>
-                  {c.name}
-                  <small>{c.en}</small>
+                  <CityNames city={c} locale={locale} />
                 </strong>
                 <p>
-                  {c.lines.length} 条线路 · {c.stations.length} 个站点
+                  <span className="city-credit">{contributionLabel(c, locale)}</span>
+                  {t('{0} 条线路 · {1} 个站点', c.lines.length, c.stations.length)}
                 </p>
               </div>
               {c.id === cityId ? <Check size={18} /> : <ChevronRight size={18} />}
@@ -1007,10 +1096,10 @@ export default function App() {
         <div className="sheet bottom">
           <div className="sheet-head">
             <div>
-              <h2>筛选线路</h2>
-              <p>只显示一条线路及其站点。</p>
+              <h2>{t('筛选线路')}</h2>
+              <p>{t('只显示一条线路及其站点。')}</p>
             </div>
-            {closeButton('关闭线路选择', () => setLineOpen(false))}
+            {closeButton(t('关闭线路选择'), () => setLineOpen(false))}
           </div>
           <div className="line-grid">
             <button
@@ -1021,7 +1110,7 @@ export default function App() {
               }}
             >
               <Globe2 size={16} />
-              <span>全部线路</span>
+              <span>{t('全部线路')}</span>
             </button>
             {city.lines.map((l) => (
               <button
@@ -1035,7 +1124,7 @@ export default function App() {
                 }}
               >
                 <i style={{ background: l.color }} />
-                <span>{l.name}</span>
+                <span>{name(l)}</span>
               </button>
             ))}
           </div>
@@ -1051,37 +1140,47 @@ export default function App() {
         <div className="sheet">
           <div className="sheet-head">
             <div>
-              <h2>数据管理</h2>
-              <p>导出备份，或从备份中恢复足迹。</p>
+              <h2>{t('数据管理')}</h2>
+              <p>{t('导出备份，或从备份中恢复足迹。')}</p>
             </div>
-            {closeButton('关闭数据管理', () => setSettingsOpen(false))}
+            {closeButton(t('关闭数据管理'), () => setSettingsOpen(false))}
           </div>
+          <label className="language-setting">
+            <span>{t('语言')}</span>
+            <select
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as 'zh-CN' | 'en-GB')}
+            >
+              <option value="zh-CN">简体中文</option>
+              <option value="en-GB">English (UK)</option>
+            </select>
+          </label>
           <div className="info-box">
             <HardDrive size={20} />
             <div>
-              <h3>已在当前设备保存</h3>
-              <p>无需登录，所有足迹仅保存在此浏览器。清理浏览器数据前，请记得导出备份。</p>
+              <h3>{t('已在当前设备保存')}</h3>
+              <p>{t('无需登录，所有足迹仅保存在此浏览器。清理浏览器数据前，请记得导出备份。')}</p>
             </div>
           </div>
           <button className="action-row" onClick={exportBackup}>
             <Download size={20} />
             <div>
-              <strong>导出足迹备份</strong>
-              <small>包含所有城市的行程与单站打卡</small>
+              <strong>{t('导出足迹备份')}</strong>
+              <small>{t('包含所有城市的行程与单站打卡')}</small>
             </div>
             <ChevronRight size={18} />
           </button>
           <button className="action-row" onClick={() => fileInput.current?.click()}>
             <Upload size={20} />
             <div>
-              <strong>从备份中恢复</strong>
-              <small>导入 JSON 文件，自动合并并去除重复记录</small>
+              <strong>{t('从备份中恢复')}</strong>
+              <small>{t('导入 JSON 文件，自动合并并去除重复记录')}</small>
             </div>
             <ChevronRight size={18} />
           </button>
           <p className="privacy">
             <ShieldCheck size={15} />
-            全地铁不会上传你的足迹。
+            {t('全地铁不会上传你的足迹。')}
           </p>
         </div>
       </Popup>
@@ -1106,54 +1205,66 @@ export default function App() {
         <div className="sheet wide">
           <div className="sheet-head">
             <div>
-              <h2>使用指南</h2>
-              <p>三步记录你的城市足迹。</p>
+              <h2>{t('使用指南')}</h2>
+              <p>{t('三步记录你的城市足迹。')}</p>
             </div>
-            {closeButton('关闭使用指南', () => setHelpOpen(false))}
+            {closeButton(t('关闭使用指南'), () => setHelpOpen(false))}
           </div>
           <div className="guide-step">
             <span>1</span>
             <div>
-              <h3>单站点亮</h3>
+              <h3>{t('单站点亮')}</h3>
               <p>
-                单击地图上的站点即可标记“上下车过”，不会点亮任何区间。可以从提示中撤销，也可以在“我的足迹”中删除记录。
+                {t(
+                  '单击地图上的站点即可标记“上下车过”，不会点亮任何区间。可以从提示中撤销，也可以在“我的足迹”中删除记录。',
+                )}
               </p>
             </div>
           </div>
           <div className="guide-step">
             <span>2</span>
             <div>
-              <h3>记录完整旅程</h3>
+              <h3>{t('记录完整旅程')}</h3>
               <p>
-                输入上下车站，可按顺序添加最多三个换乘站。预览路线与沿途站点，确认后点亮所有途经站点和乘车区间。
+                {t(
+                  '输入上下车站，可按顺序添加最多三个换乘站。预览路线与沿途站点，确认后点亮所有途经站点和乘车区间。',
+                )}
               </p>
             </div>
           </div>
           <div className="guide-step">
             <span>3</span>
             <div>
-              <h3>看懂足迹颜色</h3>
+              <h3>{t('看懂足迹颜色')}</h3>
               <p>
-                蓝色实心表示上下车过，橙色圆环表示换乘过，浅蓝圆圈表示仅途经。同时上下车与换乘过的站点，会显示蓝色实心加橙色标记。
+                {t(
+                  '蓝色实心表示上下车过，橙色圆环表示换乘过，浅蓝圆圈表示仅途经。同时上下车与换乘过的站点，会显示蓝色实心加橙色标记。',
+                )}
               </p>
             </div>
           </div>
           <div className="sources">
+            <p className="city-credit">{contributionLabel(city, locale)}</p>
             <h3>
-              <BookOpen size={15} /> 线网数据说明
+              <BookOpen size={15} />
+              {t('线网数据说明')}
             </h3>
             <p>
-              {city.name} · 数据快照 {city.updatedAt}。{city.description}
-              。本应用记录个人足迹，不提供实时运营、时刻或票价信息，实际出行请以运营方公告为准。
+              <CityNames city={city} locale={locale} /> {t('· 数据快照')} {city.updatedAt}
+              {locale === 'en-GB' ? '. ' : '。'}
+              {locale === 'en-GB' ? (city.descriptionEn ?? city.description) : city.description}
+              {t(
+                '。本应用记录个人足迹，不提供实时运营、时刻或票价信息，实际出行请以运营方公告为准。',
+              )}
             </p>
             {city.sources.map((s) => (
               <a key={s.url} href={s.url} target="_blank" rel="noreferrer">
-                {s.title}
+                {locale === 'en-GB' ? (s.titleEn ?? s.title) : s.title}
                 <ArrowUpRight size={13} />
               </a>
             ))}
           </div>
-          <p className="sheet-note">MetroListo 全地铁 · 灵感来自线格 · Built with TDesign</p>
+          <p className="sheet-note">{t('MetroListo 全地铁 · 灵感来自线格 · Built with TDesign')}</p>
         </div>
       </Popup>
       <Popup
@@ -1166,14 +1277,14 @@ export default function App() {
         <div className="sheet">
           <div className="sheet-head">
             <div>
-              <h2>{journeyDetail?.kind === 'trip' ? '地铁旅程' : '单站点亮'}</h2>
+              <h2>{journeyDetail?.kind === 'trip' ? t('地铁旅程') : t('单站点亮')}</h2>
             </div>
-            {closeButton('关闭行程详情', () => setJourneyDetail(null))}
+            {closeButton(t('关闭行程详情'), () => setJourneyDetail(null))}
           </div>
           {journeyDetail && (
             <>
               <p className="detail-date">
-                {new Date(journeyDetail.createdAt).toLocaleString('zh-CN')}
+                {new Date(journeyDetail.createdAt).toLocaleString(locale)}
               </p>
               <h3 className="detail-route">
                 {displayName(journeyDetail.stationIds[0])}
@@ -1190,7 +1301,7 @@ export default function App() {
                     <div className="leg" key={i}>
                       <i style={{ background: network.lineById.get(g.lineId)!.color }} />
                       <div>
-                        <strong>{network.lineById.get(g.lineId)!.name}</strong>
+                        <strong>{name(network.lineById.get(g.lineId)!)}</strong>
                         <p>{g.stationIds.map(displayName).join(' → ')}</p>
                       </div>
                     </div>
@@ -1198,7 +1309,7 @@ export default function App() {
                 </div>
               ) : (
                 <p className="sheet-note" style={{ marginTop: 0, marginBottom: 16 }}>
-                  仅记录上下车，未点亮区间。
+                  {t('仅记录上下车，未点亮区间。')}
                 </p>
               )}
               <Button
@@ -1221,7 +1332,7 @@ export default function App() {
                   setJourneyDetail(null);
                 }}
               >
-                在地图上查看
+                {t('在地图上查看')}
               </Button>
             </>
           )}
@@ -1229,19 +1340,21 @@ export default function App() {
       </Popup>
       <Dialog
         visible={!!deleteId}
-        title="撤销这条足迹？"
-        content="此条记录将被移除。其他旅程中已点亮的站点和区间会保留。"
-        confirmBtn="撤销记录"
-        cancelBtn="保留"
+        title={t('撤销这条足迹？')}
+        content={t('此条记录将被移除。其他旅程中已点亮的站点和区间会保留。')}
+        confirmBtn={t('撤销记录')}
+        cancelBtn={t('保留')}
         onConfirm={() => deleteId && removeJourney(deleteId)}
         onClose={() => setDeleteId(null)}
       />
       {toast && (
         <div className="toast" role="status">
           <CheckCircle2 size={17} />
-          <span>{toast.text}</span>
-          {toast.undoId && <button onClick={() => removeJourney(toast.undoId!)}>撤销</button>}
-          <button aria-label="关闭提示" className="toast-close" onClick={() => setToast(null)}>
+          <span>{t(toast.text)}</span>
+          {toast.undoId && (
+            <button onClick={() => removeJourney(toast.undoId!)}>{t('撤销')}</button>
+          )}
+          <button aria-label={t('关闭提示')} className="toast-close" onClick={() => setToast(null)}>
             <X size={15} />
           </button>
         </div>

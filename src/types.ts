@@ -1,9 +1,17 @@
 export type Point = [number, number];
 
+/** BCP 47 language tag and the name in that language, independent of script. */
+export interface LocalisedName {
+  language: string;
+  value: string;
+}
+
+/** At least one name; the first is the fallback when the UI language is unavailable. */
+export type Names = [LocalisedName, ...LocalisedName[]];
+
 export interface Station {
   id: string;
-  name: string;
-  en?: string;
+  names: Names;
   aliases?: string[];
   x: number;
   y: number;
@@ -12,8 +20,8 @@ export interface Station {
 
 export interface MetroLine {
   id: string;
-  name: string;
-  shortName: string;
+  names: Names;
+  shortNames: Names;
   color: string;
   kind: 'metro' | 'rail' | 'tram' | 'maglev';
   stationIds: string[];
@@ -34,12 +42,19 @@ export interface Segment {
 export interface CityData {
   schemaVersion: 1;
   id: string;
-  name: string;
-  en: string;
+  /** Required Chinese city name, regardless of the station naming language. */
+  zhName: string;
+  /** Required English city name. */
+  enName: string;
+  /** Optional local city name and its BCP 47 language tag, e.g. 서울 / ko. */
+  localName?: { name: string; language: string };
   updatedAt: string;
   description: string;
+  descriptionEn?: string;
+  /** Official refers to MetroListo maintenance, not transport-operator endorsement. */
+  attribution?: { kind: 'official' } | { kind: 'community'; name: string };
   center: Point;
-  sources: { title: string; url: string }[];
+  sources: { title: string; titleEn?: string; url: string }[];
   stations: Station[];
   lines: MetroLine[];
   segments: Segment[];

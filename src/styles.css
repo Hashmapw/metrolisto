@@ -1761,8 +1761,9 @@ svg {
 }
 .city-option strong {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px 8px;
   font-size: 18px;
   font-weight: 700;
 }
@@ -1772,6 +1773,12 @@ svg {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text-3);
+}
+.city-other-names {
+  overflow-wrap: anywhere;
+}
+.sources .city-other-names {
+  margin-inline-start: 0.5em;
 }
 .city-option p {
   font-size: 13px;
@@ -2391,4 +2398,46 @@ svg {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+.language-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 20px;
+}
+.language-setting select {
+  max-width: 65%;
+  padding: 9px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: white;
+  color: inherit;
+  font: inherit;
+}
+.city-credit {
+  display: block;
+  margin: 4px 0;
+  color: var(--primary, #0052d9);
+  font-size: 12px;
+}
+html[lang='en-GB'] .rail-item {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+}
+html[lang='en-GB'] .route-options {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+html[lang='en-GB'] .line-strip > button {
+  flex-shrink: 0;
+}
+html[lang='en-GB'] .preview-head {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+html[lang='en-GB'] .station-popover h3 {
+  overflow-wrap: anywhere;
 }

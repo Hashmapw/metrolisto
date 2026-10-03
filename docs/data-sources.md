@@ -36,10 +36,29 @@
 
 ```sh
 node scripts/import-amap.mjs /path/to/shanghai.json /path/to/beijing.json
+# 在 src/data/*.json 核对并补齐新增站点和线路的英文名、更新日期及来源
+pnpm format:city
 pnpm test
 pnpm build
 ```
 
 转换器只在开发时使用，不参与客户端运行。更新时核对补充线路、暂停站点和方向规则，并同步修改 `updatedAt`。对已有站点和区间保持 ID 兼容，避免影响用户历史记录。
 
+转换器直接输出“一条记录一行”的统一城市格式；手工修改后运行 `pnpm format:city`。构建与 PR 格式检查会拒绝全文件压缩或完全展开的版本，详见[城市数据格式规则](city-data.md#必须遵循的-json-格式)。
+
 地图数据及名称的权利归原权利人；此目录保留来源与整理说明，不为第三方数据另行授予许可。正式对外发布时按实际使用范围核实供应商使用条款。
+
+## 英文名称与第一方维护标识
+
+北京、上海由 MetroListo 官方维护，城市选择与数据说明中显示该标识。第一方身份与运营方数据来源是两个不同概念。
+
+英文站名参照运营方双语线网图，保留其专名、方向缩写和英文括注，不按界面语言重新翻译专名：
+
+- 上海：[上海地铁双语图下载页](https://service.shmetro.com/en/zlxz/index.htm)及[双语线网图](https://service.shmetro.com/skin/map/shmetro-map.jpg)，读取图版为 D202512，包含金山铁路；例如 `Nanjing Rd.(E)`、`Jinshanyuanqu`。
+- 北京：[京港地铁官方线网图](https://www.mtr.bj.cn/article/line)，本次读取的[原始双语图](https://cdnwww.mtr.bj.cn/bjmtr/default/mxFXoKAXCCYv61DjKHdzl.jpg)含亦庄 T1；例如 `Qu Zhuang`、`Lujuan Dong (E)`、`3 Hao Hangzhanlou (Terminal 3)`。
+
+中文和官方英文站名统一存放在 `src/data/beijing.json`、`src/data/shanghai.json` 的同一个站点对象的 `names` 列表中（`zh-CN` / `en`）；线路双语名称、城市名称、英文运营范围、来源标题和官方维护标识也直接维护在该文件内。没有独立的 localisation 名称目录，也没有旧格式迁移步骤。`aliases` 仅用于贡献者明确提供的搜索别名。
+
+高德转换器仅用于这两城的拓扑和坐标更新，按 ID 从现有城市 JSON 读取已核对的名称与别名，并保留城市元数据。新站点或线路缺少官方英文名时，脚本输出待补齐提示；请直接编辑生成后的城市 JSON，测试会检查北京、上海的双语完整性。其他城市可直接按统一协议贡献 JSON，无需使用高德转换器。
+
+未来用户贡献城市使用 `attribution: { "kind": "community", "name": "贡献者名称" }`，界面显示“由〈名称〉贡献”。其城市名必须有中文和英文，可另提供当地名；站点与线路只需在 `names` 中提供任意一种语言的名称，线路简称使用同样结构的 `shortNames`，详见 [城市数据协议](city-data.md)。
