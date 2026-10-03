@@ -1,6 +1,6 @@
 # MetroListo · 全地铁
 
-用日常通勤，收集一座城市。基于 **pnpm + React 18 + TypeScript + Vite + TDesign Mobile React** 的响应式网页应用，产品灵感来自 [线格](https://apps.apple.com/cn/app/id6770010912)。
+用日常通勤，收集一座城市。基于 **pnpm + React 18 + TypeScript + Vite + TDesign Mobile React** 的响应式网页应用，通过 **Capacitor** 支持 iOS 和 Android，产品灵感来自 [线格](https://apps.apple.com/cn/app/id6770010912)。
 
 ## 本地运行
 
@@ -21,6 +21,19 @@ pnpm format:check  # 格式检查
 ```
 
 `dist/` 可部署到任意静态站点服务。无需 API Key、数据库或后端。字体随应用打包，浏览器运行时不依赖外部地图接口或字体服务。
+
+## iOS / Android
+
+已初始化 Capacitor 8.5.2，应用名称为 **全地铁**，两端标识均为 **`com.tianzeds.ml`**。
+
+```sh
+pnpm install
+pnpm cap:sync     # 构建网页并同步到 iOS 和 Android
+pnpm cap:ios      # 构建、同步 iOS，并在 Xcode 中打开
+pnpm cap:android  # 构建、同步 Android，并在 Android Studio 中打开
+```
+
+iOS 使用 Swift Package Manager。环境要求、单平台同步、原生构建和签名说明见 [原生应用开发](docs/native-apps.md)。
 
 ## 已实现
 
@@ -65,6 +78,9 @@ src/
   types.ts                   城市、区间、足迹协议
   styles.css                 TDesign 主题与响应式布局
 scripts/import-amap.mjs       开发期数据转换器
+capacitor.config.ts           原生应用标识、Web 资源目录和平台配置
+ios/                         Xcode 工程与 Swift Package Manager 配置
+android/                     Android Studio 工程与 Gradle Wrapper
 docs/                        数据协议、最小城市示例与来源
 ```
 
