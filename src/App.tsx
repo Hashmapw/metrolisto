@@ -420,9 +420,7 @@ export default function App() {
         </div>
         <div>
           <strong>{progress.lines.size}</strong>
-          <span>
-            / {city.lines.length} {t('线路')}
-          </span>
+          <span>/ {t('{0} 线路', city.lines.length)}</span>
         </div>
         <div>
           <strong>{trips.length}</strong>
