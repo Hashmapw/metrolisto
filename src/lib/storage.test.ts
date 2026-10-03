@@ -146,6 +146,24 @@ describe('persistent exploration history', () => {
     vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(backup) });
     expect(readSavedData(cities)).toEqual({ data: backup, error: null });
   });
+  it.each(['shenzhen', 'guangzhou'])(
+    '%s journeys round-trip alongside existing city records',
+    (cityId) => {
+      const city = cities.find((c) => c.id === cityId)!;
+      const [from, to] = city.lines[0].stationIds;
+      const trip: Journey = {
+        ...findRoute(createNetwork(city), from, to)!,
+        id: `${cityId}-trip`,
+        kind: 'trip',
+        createdAt: '2026-10-03T00:00:00Z',
+      };
+      const backup = {
+        version: 1,
+        cities: { shanghai: [journey, manual], beijing: [], [cityId]: [trip] },
+      };
+      expect(validateBackup(JSON.parse(JSON.stringify(backup)), cities)).toEqual(backup);
+    },
+  );
   it('cancels all manual lighting for one station while retaining trips and other stations', () => {
     const other = { ...manual, id: 'manual-other', stationIds: [id('新闸路')] };
     const records = [journey, manual, { ...manual, id: 'imported-manual' }, other];
