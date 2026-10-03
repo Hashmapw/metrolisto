@@ -10,15 +10,14 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "build:android": "pnpm build && pnpm sync:capacitor",
+    "build:ios": "pnpm build && pnpm sync:capacitor",
     "preview": "vite preview --host 0.0.0.0",
-    "cap:sync": "pnpm build && cap sync",
-    "cap:sync:ios": "pnpm build && cap sync ios",
-    "cap:sync:android": "pnpm build && cap sync android",
-    "cap:ios": "pnpm cap:sync:ios && cap open ios",
-    "cap:android": "pnpm cap:sync:android && cap open android",
     "test": "vitest run",
     "format": "prettier --write src scripts docs *.json *.ts *.yaml *.md index.html",
-    "format:check": "prettier --check src scripts docs *.json *.ts *.yaml *.md index.html"
+    "format:check": "prettier --check src scripts docs *.json *.ts *.yaml *.md index.html",
+    "copy:capacitor": "npx cap copy",
+    "sync:capacitor": "npx cap sync"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
