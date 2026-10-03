@@ -1,9 +1,10 @@
+import { routeTransfers } from './network';
 import type { CityData, Journey, Progress, SavedData } from '../types';
 
 export const STORAGE_KEY = 'metrolisto.journeys.v1';
 export const emptyData = (): SavedData => ({ version: 1, cities: {} });
 
-export function validateBackup(value: unknown, cities: CityData[]): SavedData {
+export function validateBackup(value: unknown, cities: CityData[], recover = false): SavedData {
   if (!value || typeof value !== 'object') throw new Error('无法识别备份文件');
   const data = value as SavedData;
   if (
@@ -14,72 +15,99 @@ export function validateBackup(value: unknown, cities: CityData[]): SavedData {
   )
     throw new Error('备份版本或格式不正确');
   const result = emptyData();
+  const quarantine = (cityId: string, value: unknown, reason: string) => {
+    if (!recover) throw new Error(reason);
+    (result.quarantined ??= []).push({ cityId, value, reason });
+  };
+  if (data.quarantined !== undefined) {
+    if (
+      !Array.isArray(data.quarantined) ||
+      data.quarantined.some(
+        (entry) =>
+          !entry ||
+          typeof entry.cityId !== 'string' ||
+          typeof entry.reason !== 'string' ||
+          !('value' in entry),
+      )
+    )
+      throw new Error('隔离记录格式不正确');
+    if (data.quarantined.length) result.quarantined = [...data.quarantined];
+  }
   for (const [cityId, journeys] of Object.entries(data.cities)) {
     const city = cities.find((c) => c.id === cityId);
-    if (!city) throw new Error(`请先添加城市数据：${cityId}`);
-    if (!Array.isArray(journeys) || journeys.length > 20000)
-      throw new Error('行程记录格式不正确或数量过多');
+    if (!city || !Array.isArray(journeys) || journeys.length > 20000) {
+      quarantine(
+        cityId,
+        journeys,
+        !city ? `请先添加城市数据：${cityId}` : '行程记录格式不正确或数量过多',
+      );
+      continue;
+    }
     const stations = new Set(city.stations.map((s) => s.id));
     const segments = new Map(city.segments.map((s) => [s.id, s]));
     const ids = new Set<string>();
+    const valid: Journey[] = [];
     for (const j of journeys) {
-      if (
-        !j ||
-        typeof j.id !== 'string' ||
-        !j.id ||
-        ids.has(j.id) ||
-        !['trip', 'station'].includes(j.kind) ||
-        typeof j.createdAt !== 'string' ||
-        !Number.isFinite(Date.parse(j.createdAt))
-      )
-        throw new Error('行程信息无效');
-      if (
-        !Array.isArray(j.stationIds) ||
-        !j.stationIds.length ||
-        j.stationIds.some((id) => !stations.has(id)) ||
-        !Array.isArray(j.segmentIds) ||
-        !Array.isArray(j.lineIds) ||
-        !Array.isArray(j.transferIds)
-      )
-        throw new Error('站点或线路数据不匹配');
-      if (j.kind === 'station') {
+      try {
         if (
-          j.stationIds.length !== 1 ||
-          j.segmentIds.length ||
-          j.lineIds.length ||
-          j.transferIds.length
+          !j ||
+          typeof j.id !== 'string' ||
+          !j.id ||
+          ids.has(j.id) ||
+          !['trip', 'station'].includes(j.kind) ||
+          typeof j.createdAt !== 'string' ||
+          !Number.isFinite(Date.parse(j.createdAt))
         )
-          throw new Error('单站记录不应含区间');
-      } else {
+          throw new Error('行程信息无效');
         if (
-          j.segmentIds.length !== j.stationIds.length - 1 ||
-          !j.segmentIds.length ||
-          j.lineIds.length !== j.segmentIds.length
+          !Array.isArray(j.stationIds) ||
+          !j.stationIds.length ||
+          j.stationIds.some((id) => !stations.has(id)) ||
+          !Array.isArray(j.segmentIds) ||
+          !Array.isArray(j.lineIds) ||
+          !Array.isArray(j.transferIds)
         )
-          throw new Error('行程区间数量不匹配');
-        j.segmentIds.forEach((id, i) => {
-          const edge = segments.get(id),
-            a = j.stationIds[i],
-            b = j.stationIds[i + 1];
+          throw new Error('站点或线路数据不匹配');
+        if (j.kind === 'station') {
           if (
-            !edge ||
-            edge.lineId !== j.lineIds[i] ||
-            !(
-              (edge.from === a && edge.to === b) ||
-              (!edge.oneWay && edge.from === b && edge.to === a)
-            )
+            j.stationIds.length !== 1 ||
+            j.segmentIds.length ||
+            j.lineIds.length ||
+            j.transferIds.length
           )
-            throw new Error('行程含不连通或方向错误的区间');
-        });
-        const transfers = j.stationIds.filter(
-          (_, i) => i > 0 && i < j.stationIds.length - 1 && j.lineIds[i - 1] !== j.lineIds[i],
-        );
-        if (JSON.stringify(transfers) !== JSON.stringify(j.transferIds))
-          throw new Error('换乘记录不匹配');
+            throw new Error('单站记录不应含区间');
+        } else {
+          if (
+            j.segmentIds.length !== j.stationIds.length - 1 ||
+            !j.segmentIds.length ||
+            j.lineIds.length !== j.segmentIds.length
+          )
+            throw new Error('行程区间数量不匹配');
+          j.segmentIds.forEach((id, i) => {
+            const edge = segments.get(id),
+              a = j.stationIds[i],
+              b = j.stationIds[i + 1];
+            if (
+              !edge ||
+              edge.lineId !== j.lineIds[i] ||
+              !(
+                (edge.from === a && edge.to === b) ||
+                (!edge.oneWay && edge.from === b && edge.to === a)
+              )
+            )
+              throw new Error('行程含不连通或方向错误的区间');
+          });
+          const transfers = routeTransfers(city, j);
+          if (JSON.stringify(transfers) !== JSON.stringify(j.transferIds))
+            throw new Error('换乘记录不匹配');
+        }
+        ids.add(j.id);
+        valid.push(j);
+      } catch (error) {
+        quarantine(cityId, j, error instanceof Error ? error.message : '行程信息无效');
       }
-      ids.add(j.id);
     }
-    result.cities[cityId] = journeys.map((j) => ({
+    result.cities[cityId] = valid.map((j) => ({
       id: j.id,
       kind: j.kind,
       createdAt: j.createdAt,
@@ -95,7 +123,7 @@ export function validateBackup(value: unknown, cities: CityData[]): SavedData {
 export function readSavedData(cities: CityData[]): { data: SavedData; error: string | null } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return { data: raw ? validateBackup(JSON.parse(raw), cities) : emptyData(), error: null };
+    return { data: raw ? validateBackup(JSON.parse(raw), cities, true) : emptyData(), error: null };
   } catch {
     return {
       data: emptyData(),
@@ -132,6 +160,15 @@ export function getProgress(journeys: Journey[]): Progress {
 /** Merge by record identity, comparing values independently of JSON property order. */
 export function mergeBackups(current: SavedData, incoming: SavedData): SavedData {
   const result: SavedData = { version: 1, cities: { ...current.cities } };
+  const quarantined = [
+    ...new Map(
+      [...(current.quarantined ?? []), ...(incoming.quarantined ?? [])].map((entry) => [
+        JSON.stringify(entry),
+        entry,
+      ]),
+    ).values(),
+  ];
+  if (quarantined.length) result.quarantined = quarantined;
   const signature = (j: Journey) =>
     JSON.stringify([j.kind, j.createdAt, j.stationIds, j.segmentIds, j.lineIds, j.transferIds]);
   for (const [cityId, journeys] of Object.entries(incoming.cities)) {
@@ -149,16 +186,4 @@ export function mergeBackups(current: SavedData, incoming: SavedData): SavedData
     );
   }
   return result;
-}
-
-export function downloadBackup(data: SavedData) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob),
-    link = document.createElement('a');
-  link.href = url;
-  link.download = `MetroListo-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

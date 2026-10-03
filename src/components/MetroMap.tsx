@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Focus, LocateFixed, Maximize2, Minus, Plus, RotateCcw, X } from 'lucide-react';
-import type { Network } from '../lib/network';
+import { isTransferStation, type Network } from '../lib/network';
+import { cubicArrow, cubicPath } from '../lib/mapGeometry';
 import type { Progress, Route, Station } from '../types';
 
 interface Props {
@@ -66,12 +67,14 @@ export default function MetroMap({
     return () => observer.disconnect();
   }, []);
 
-  const fit = (ids?: string[]) => {
+  const fit = (ids?: string[], segmentIds?: string[]) => {
     const stations = ids ? ids.map((id) => network.stationById.get(id)!) : city.stations;
     if (!stations.length) return;
     const stationIds = new Set(stations.map((s) => s.id));
     const points = city.segments
-      .filter((s) => stationIds.has(s.from) && stationIds.has(s.to))
+      .filter((s) =>
+        segmentIds ? segmentIds.includes(s.id) : stationIds.has(s.from) && stationIds.has(s.to),
+      )
       .flatMap((s) => s.points ?? []);
     const xs = [...stations.map((s) => s.x), ...points.map((p) => p[0])],
       ys = [...stations.map((s) => s.y), ...points.map((p) => p[1])];
@@ -97,8 +100,8 @@ export default function MetroMap({
   }, [focusStation, network]);
 
   useEffect(() => {
-    if (route) fit(route.stationIds);
-  }, [route]); // fit only when the user previews a new route
+    if (route) fit(route.stationIds, route.segmentIds);
+  }, [route, size.width, size.height]); // keep the full route visible after layout changes
   useEffect(() => {
     if (activeLine) fit(network.lineById.get(activeLine)?.stationIds);
   }, [activeLine]);
@@ -151,7 +154,7 @@ export default function MetroMap({
         const priority = (s: Station) =>
           (s.id === selected?.id ? 20 : 0) +
           (routeStations.has(s.id) ? 10 : 0) +
-          (network.stationLines.get(s.id)!.length > 1 ? 5 : 0) +
+          (isTransferStation(network, s.id) ? 5 : 0) +
           (progress.stations.has(s.id) ? 3 : 0);
         return priority(b) - priority(a);
       })
@@ -201,8 +204,11 @@ export default function MetroMap({
 
   const zoom = (factor: number) =>
     setView((v) => ({ ...v, width: Math.max(360, Math.min(6000, v.width * factor)) }));
+  const canSelect = (s: Station) =>
+    (!activeLine || network.lineById.get(activeLine)!.stationIds.includes(s.id)) &&
+    (!route || routeStations.has(s.id));
   const selectStation = (s: Station) => {
-    if (!moved.current) {
+    if (canSelect(s) && !moved.current) {
       setSelected(s);
       onStation(s);
     }
@@ -276,9 +282,9 @@ export default function MetroMap({
             const rect = e.currentTarget.getBoundingClientRect();
             const x = view.x + (e.clientX - rect.left - rect.width / 2) * scale;
             const y = view.y + (e.clientY - rect.top - rect.height / 2) * scale;
-            const station = [...city.stations].sort(
-              (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
-            )[0];
+            const station = [...city.stations]
+              .filter(canSelect)
+              .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
             if (station && Math.hypot(station.x - x, station.y - y) < Math.max(13, scale * 12))
               selectStation(station);
           }
@@ -336,15 +342,17 @@ export default function MetroMap({
             const color = exploredOnly && !isLit && !isRoute ? COLOR.dim : line.color;
             // Place a direction arrow on the longest straight leg, clear of station markers.
             const arrow = edge.oneWay
-              ? points
-                  .slice(1)
-                  .map((p, i) => ({
-                    x: (p[0] + points[i][0]) / 2,
-                    y: (p[1] + points[i][1]) / 2,
-                    angle: (Math.atan2(p[1] - points[i][1], p[0] - points[i][0]) * 180) / Math.PI,
-                    length: Math.hypot(p[0] - points[i][0], p[1] - points[i][1]),
-                  }))
-                  .sort((a, b) => b.length - a.length)[0]
+              ? edge.curve === 'cubic'
+                ? cubicArrow(points)
+                : points
+                    .slice(1)
+                    .map((p, i) => ({
+                      x: (p[0] + points[i][0]) / 2,
+                      y: (p[1] + points[i][1]) / 2,
+                      angle: (Math.atan2(p[1] - points[i][1], p[0] - points[i][0]) * 180) / Math.PI,
+                      length: Math.hypot(p[0] - points[i][0], p[1] - points[i][1]),
+                    }))
+                    .sort((a, b) => b.length - a.length)[0]
               : null;
             const arrowSize = Math.max(9, scale * 5);
             return (
@@ -352,12 +360,21 @@ export default function MetroMap({
                 key={edge.id}
                 opacity={dim ? 0.12 : isLit || isRoute ? 1 : exploredOnly ? 0.7 : 0.7}
               >
-                <polyline
-                  points={points.map((p) => p.join(',')).join(' ')}
-                  stroke={color}
-                  strokeWidth={isRoute ? 9 : isLit ? 8 : 5.5}
-                  className={isRoute ? 'preview-line' : ''}
-                />
+                {edge.curve === 'cubic' ? (
+                  <path
+                    d={cubicPath(points)}
+                    stroke={color}
+                    strokeWidth={isRoute ? 9 : isLit ? 8 : 5.5}
+                    className={isRoute ? 'preview-line' : ''}
+                  />
+                ) : (
+                  <polyline
+                    points={points.map((p) => p.join(',')).join(' ')}
+                    stroke={color}
+                    strokeWidth={isRoute ? 9 : isLit ? 8 : 5.5}
+                    className={isRoute ? 'preview-line' : ''}
+                  />
+                )}
                 {arrow && arrow.length > arrowSize * 4 && (
                   <path
                     d={`M ${-arrowSize} ${-arrowSize * 0.65} L ${arrowSize} 0 L ${-arrowSize} ${arrowSize * 0.65} Z`}
@@ -378,7 +395,7 @@ export default function MetroMap({
         <g>
           {city.stations.map((s) => {
             const state = progress.stations.get(s.id),
-              interchange = network.stationLines.get(s.id)!.length > 1;
+              interchange = isTransferStation(network, s.id);
             const inRoute = routeStations.has(s.id),
               inLine = !activeLine || network.lineById.get(activeLine)!.stationIds.includes(s.id);
             const r = interchange ? 8.8 : 5.7;
@@ -394,7 +411,8 @@ export default function MetroMap({
               <g
                 key={s.id}
                 role="button"
-                tabIndex={inLine ? 0 : -1}
+                tabIndex={canSelect(s) ? 0 : -1}
+                aria-disabled={!canSelect(s)}
                 aria-label={`点亮站点 ${s.name}`}
                 onClick={(e) => {
                   // Assistive technologies can dispatch a click without pointer events.
@@ -463,7 +481,7 @@ export default function MetroMap({
               x={x}
               y={y}
               fontSize={fontSize}
-              fontWeight={network.stationLines.get(s.id)!.length > 1 ? 600 : 400}
+              fontWeight={isTransferStation(network, s.id) ? 600 : 400}
               fill={progress.stations.get(s.id)?.visited ? '#0043b3' : '#5a6270'}
               stroke={COLOR.halo}
               strokeWidth="4"
@@ -475,7 +493,7 @@ export default function MetroMap({
           ))}
         </g>
       </svg>
-      {selected && (
+      {selected && canSelect(selected) && (
         <div className="station-popover">
           <button
             className="icon-btn small"

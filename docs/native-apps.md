@@ -36,21 +36,21 @@ MetroListo 使用 Capacitor 8.5.2 将现有 React 应用打包到 iOS 和 Androi
 
 ```sh
 pnpm install
-pnpm cap:sync
+pnpm build && pnpm sync:capacitor
 ```
 
-之后按平台打开工程：
+之后按需要构建，再通过 IDE 打开工程：
 
 ```sh
-pnpm cap:ios
-pnpm cap:android
+pnpm build:ios
+pnpm build:android
 ```
 
-这些命令会先重新构建 Web 应用并同步对应平台，避免原生工程打包旧的网页代码。也可以只同步，不启动 IDE：
+这两个构建命令都会重新构建 Web 应用并同步两端，不自动启动 IDE。随后在 Xcode 打开 `ios/App/App.xcodeproj`，或在 Android Studio 打开 `android/`。已有最新 Web 产物时，也可以仅同步单个平台：
 
 ```sh
-pnpm cap:sync:ios
-pnpm cap:sync:android
+pnpm exec cap sync ios
+pnpm exec cap sync android
 ```
 
 网页调试继续使用 `pnpm dev`。修改网页代码、Capacitor 配置或增加插件后，在原生工程重新构建前执行同步；仅修改 Swift / Java 原生代码时，直接通过对应 IDE 构建。
@@ -68,14 +68,14 @@ pnpm cap:sync:android
 
 足迹仍使用 localStorage，数据保存在当前安装应用的 WebView 内；与 Safari、Chrome 或网页开发服务器的数据相互独立。卸载应用或清除应用数据会删除本地足迹。
 
-备份导入、导出当前沿用网页实现。此次初始化尚未接入原生文件系统和分享插件；原生端文件选择、下载和长期存储行为需要在发布前进行真机验证。
+备份导出使用 [Filesystem](https://capacitorjs.com/docs/apis/filesystem) 将 UTF-8 JSON 写入应用缓存，再通过 [Share](https://capacitorjs.com/docs/apis/share) 打开系统分享面板，由用户选择保存位置或接收应用。取消和失败不会提示导出成功。Android 已配置缓存 FileProvider，iOS 的 `PrivacyInfo.xcprivacy` 声明 `NSPrivacyAccessedAPICategoryFileTimestamp`，使用官方建议的理由码 `C617.1`（访问应用自身文件的时间戳）；这是 Filesystem 插件所需的 Apple 隐私清单，不申请额外权限，也不启用上传。缓存文件由系统回收；完成备份需在分享面板保存到应用外。网页端仍使用浏览器下载，导入仍使用文件选择器。原生文件选择、分享保存和重新导入需要在发布前真机验证。
 
 项目基础检查：
 
 ```sh
 pnpm test
 pnpm format:check
-pnpm cap:sync
+pnpm build && pnpm sync:capacitor
 ```
 
-`cap:sync` 验证 TypeScript / Web 构建、资源复制及平台配置同步，不执行 Swift / Java 编译、设备安装或模拟器运行。
+`pnpm build && pnpm sync:capacitor` 验证 TypeScript / Web 构建、资源复制及平台配置同步，不执行 Swift / Java 编译、设备安装或模拟器运行。

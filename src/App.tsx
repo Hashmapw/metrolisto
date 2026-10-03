@@ -28,10 +28,10 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { downloadBackup } from './lib/backup';
 import { cities } from './data';
 import { createNetwork, findRoute, routeGroups } from './lib/network';
 import {
-  downloadBackup,
   getProgress,
   mergeBackups,
   readSavedData,
@@ -68,6 +68,9 @@ export default function App() {
   const showSuggestion = !Object.values(initial.data.cities).some((records) => records.length > 0);
   const [saved, setSaved] = useState<SavedData>(initial.data);
   const [storageError, setStorageError] = useState(initial.error);
+  const [storageBlocked, setStorageBlocked] = useState(!!initial.error);
+  const [viewedJourney, setViewedJourney] = useState<Route | null>(null);
+  const exporting = useRef(false);
   const [cityId, setCityId] = useState(cities[0].id);
   const [page, setPage] = useState<Page>('map');
   const [cityOpen, setCityOpen] = useState(false),
@@ -122,11 +125,17 @@ export default function App() {
   }, [toast]);
   useEffect(() => {
     const sync = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && e.newValue) {
+      if (e.key === STORAGE_KEY || e.key === null) {
         try {
-          setSaved(validateBackup(JSON.parse(e.newValue), cities));
+          setSaved(
+            e.newValue
+              ? validateBackup(JSON.parse(e.newValue), cities, true)
+              : { version: 1, cities: {} },
+          );
+          setStorageBlocked(false);
           setStorageError(null);
         } catch {
+          setStorageBlocked(true);
           setStorageError('另一个页面的记录无法读取，请检查备份。');
         }
       }
@@ -136,13 +145,14 @@ export default function App() {
   }, []);
 
   const commit = (next: SavedData, allowRecovery = false) => {
-    if (initial.error && storageError && !allowRecovery) {
+    if (storageBlocked && !allowRecovery) {
       setToast({ text: '原始记录无法读取，请先在数据管理中导出并恢复备份。' });
       return false;
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       setSaved(next);
+      setStorageBlocked(false);
       setStorageError(null);
       return true;
     } catch {
@@ -164,6 +174,7 @@ export default function App() {
     setDeleteId(null);
   };
   const invalidate = () => {
+    setViewedJourney(null);
     setPreview(null);
     setRouteError('');
   };
@@ -233,6 +244,7 @@ export default function App() {
     }
     setRouteError('');
     setActiveLine(null);
+    setViewedJourney(null);
     setPreview(route);
   };
   const confirmRoute = () => {
@@ -266,34 +278,33 @@ export default function App() {
   const importBackup = async (file: File) => {
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('备份文件不得超过 10 MB');
-      const imported = validateBackup(JSON.parse(await file.text()), cities);
+      const imported = validateBackup(JSON.parse(await file.text()), cities, true);
       const next = mergeBackups(saved, imported);
       if (commit(next, true)) setToast({ text: '备份已恢复，与现有记录合并完成' });
     } catch (e) {
       setToast({ text: e instanceof Error ? e.message : '备份读取失败，请检查文件格式' });
     }
   };
-  const exportBackup = () => {
-    if (initial.error && storageError) {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const blob = new Blob([raw], { type: 'application/json' }),
-            url = URL.createObjectURL(blob),
-            a = document.createElement('a');
-          a.href = url;
-          a.download = 'MetroListo-original-recovery.json';
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          return;
-        }
-      } catch {
-        setToast({ text: '浏览器拒绝读取原始记录' });
-        return;
-      }
+  const exportBackup = async () => {
+    if (exporting.current) return;
+    exporting.current = true;
+    try {
+      const raw = storageBlocked ? localStorage.getItem(STORAGE_KEY) : null;
+      if (storageBlocked && raw === null) throw new Error('无法读取原始记录');
+      const outcome = await downloadBackup(
+        raw ?? JSON.stringify(saved, null, 2),
+        raw !== null ? 'MetroListo-original-recovery.json' : undefined,
+      );
+      setToast({
+        text: outcome === 'native' ? '分享面板已关闭，请确认已保存备份' : '已请求浏览器下载备份',
+      });
+    } catch (error) {
+      setToast({
+        text: error instanceof Error ? `备份未导出：${error.message}` : '备份未导出或分享已取消',
+      });
+    } finally {
+      exporting.current = false;
     }
-    downloadBackup(saved);
-    setToast({ text: '备份文件已导出' });
   };
   const shortDate = (date: string) =>
     new Date(date).toLocaleString('zh-CN', {
@@ -453,10 +464,13 @@ export default function App() {
               <p>{pageCopy.sub}</p>
             </div>
           </div>
-          {storageError && (
+          {(storageError || !!saved.quarantined?.length) && (
             <div className="banner" role="alert">
               <AlertCircle size={18} />
-              <span>{storageError}</span>
+              <span>
+                {storageError ??
+                  `有 ${saved.quarantined?.length} 项记录暂不可用，原始内容已保留在备份中，其余足迹可正常记录。`}
+              </span>
               <button onClick={() => setSettingsOpen(true)}>
                 管理备份 <ArrowRight size={14} />
               </button>
@@ -466,6 +480,14 @@ export default function App() {
           {page === 'map' ? (
             <div className="explore">
               <section className="card map-card">
+                {viewedJourney && (
+                  <div className="active-line">
+                    正在查看已记录旅程
+                    <button onClick={() => setViewedJourney(null)}>
+                      <X size={13} /> 退出旅程查看
+                    </button>
+                  </div>
+                )}
                 <div className="map-toolbar">
                   <Segmented
                     value={exploredOnly ? 'mine' : 'all'}
@@ -498,6 +520,7 @@ export default function App() {
                     placeholder="搜索站点"
                     variant="search"
                     onChange={(id) => {
+                      setViewedJourney(null);
                       setFocusStation(id);
                       setActiveLine(null);
                     }}
@@ -530,7 +553,7 @@ export default function App() {
                   key={city.id}
                   network={network}
                   progress={progress}
-                  route={preview}
+                  route={preview ?? viewedJourney}
                   activeLine={activeLine}
                   exploredOnly={exploredOnly}
                   focusStation={focusStation}
@@ -577,6 +600,7 @@ export default function App() {
                       key={l.id}
                       className={activeLine === l.id ? 'active' : ''}
                       onClick={() => {
+                        setViewedJourney(null);
                         setActiveLine(activeLine === l.id ? null : l.id);
                         setPreview(null);
                       }}
@@ -754,7 +778,7 @@ export default function App() {
                       <p className="preview-note">确认后记录上下车站、换乘站与全部途经区间</p>
                     </div>
                   ) : (
-                    <p className="planner-tip">最多可添加三个换乘站，换乘站需实际换线</p>
+                    <p className="planner-tip">最多可添加三个换乘站，换乘站需实际换车</p>
                   )}
                 </section>
                 {hero}
@@ -863,6 +887,7 @@ export default function App() {
                       className="line-card"
                       key={line.id}
                       onClick={() => {
+                        setViewedJourney(null);
                         setActiveLine(line.id);
                         setPreview(null);
                         setPage('map');
@@ -990,6 +1015,7 @@ export default function App() {
                 key={l.id}
                 className={activeLine === l.id ? 'selected' : ''}
                 onClick={() => {
+                  setViewedJourney(null);
                   setActiveLine(l.id);
                   setPreview(null);
                   setLineOpen(false);
@@ -1167,14 +1193,18 @@ export default function App() {
                 theme="primary"
                 onClick={() => {
                   setPage('map');
+                  setActiveLine(null);
+                  setPreview(null);
+                  setRouteError('');
+                  setViewedJourney(journeyDetail.kind === 'trip' ? { ...journeyDetail } : null);
                   if (journeyDetail.kind === 'trip') {
                     setFrom(journeyDetail.stationIds[0]);
                     setTo(journeyDetail.stationIds.at(-1)!);
                     setVia([]);
-                    setPreview(null);
-                    setActiveLine(journeyDetail.lineIds[0]);
                   }
-                  setFocusStation(journeyDetail.stationIds[0]);
+                  setFocusStation(
+                    journeyDetail.kind === 'station' ? journeyDetail.stationIds[0] : null,
+                  );
                   setJourneyDetail(null);
                 }}
               >

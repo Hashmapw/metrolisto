@@ -27,7 +27,7 @@ function makeCity(input, id) {
   const stations = new Map(),
     lines = new Map(),
     segments = new Map();
-  const addSegment = (lineId, a, b, points, oneWay = false) => {
+  const addSegment = (lineId, a, b, points, oneWay = false, curve) => {
     const key = `${lineId}:${[a, b].sort().join(':')}`;
     if (!segments.has(key))
       segments.set(key, {
@@ -37,6 +37,7 @@ function makeCity(input, id) {
         to: b,
         points,
         ...(oneWay ? { oneWay: true } : {}),
+        ...(curve ? { curve } : {}),
       });
   };
   for (const l of raw.l) {
@@ -85,6 +86,25 @@ function makeCity(input, id) {
       const a = stops[i],
         b = stops[(i + 1) % stops.length];
       addSegment(lineId, a.si, b.si, slicePath(path, point(a.p), point(b.p), l.lo === '1'));
+    }
+  }
+  // Dahongmen's platforms now form one interchange despite separate provider IDs.
+  if (id === 'beijing') {
+    const oldId = '110100023282030',
+      stationId = '110100023114028';
+    if (stations.has(oldId) && stations.has(stationId)) {
+      stations.delete(oldId);
+      for (const line of lines.values())
+        line.stationIds = [
+          ...new Set(line.stationIds.map((id) => (id === oldId ? stationId : id))),
+        ];
+      const updated = [...segments.values()];
+      segments.clear();
+      for (const edge of updated) {
+        if (edge.from === oldId) edge.from = stationId;
+        if (edge.to === oldId) edge.to = stationId;
+        addSegment(edge.lineId, edge.from, edge.to, edge.points, edge.oneWay);
+      }
     }
   }
   const byName = (name) => [...stations.values()].find((s) => s.name === name);
@@ -179,10 +199,9 @@ function makeCity(input, id) {
     for (const name of ['亦创会展中心', '经海一路', '定海园西', '定海园']) {
       byName(name).label = 1;
     }
-    // Separate the airport's directed outbound / inbound tracks into a readable loop.
-    // All existing IDs and the routing topology stay stable for saved journeys.
-    Object.assign(byName('3号航站楼'), { x: 2520, y: 397, label: 0 });
-    Object.assign(byName('2号航站楼'), { x: 2360, y: 317, label: 1 });
+    // Follow the official schematic: parallel terminal stems and an inner U-shaped return.
+    Object.assign(byName('3号航站楼'), { x: 2426, y: 307, label: 0 });
+    Object.assign(byName('2号航站楼'), { x: 2286, y: 307, label: 0 });
     const lineId = `${id}-首都机场线`;
     const links = [
       ['北新桥', '东直门', false, []],
@@ -193,35 +212,53 @@ function makeCity(input, id) {
         true,
         [
           [2126, 557],
-          [2360, 557],
+          [2191, 468],
+          [2258, 450],
+          [2370, 420],
+          [2426, 427],
+          [2426, 352],
+          [2426, 337],
+          [2426, 322],
         ],
+        'cubic',
       ],
       [
         '3号航站楼',
         '2号航站楼',
         true,
         [
-          [2520, 357],
-          [2480, 317],
+          [2426, 322],
+          [2426, 337],
+          [2426, 352],
+          [2426, 412],
+          [2286, 412],
+          [2286, 352],
+          [2286, 337],
+          [2286, 322],
         ],
+        'cubic',
       ],
       [
         '2号航站楼',
         '三元桥',
         true,
         [
-          [2240, 317],
-          [2200, 357],
-          [2200, 443],
-          [2106, 537],
-          [2066, 537],
+          [2286, 322],
+          [2286, 337],
+          [2286, 352],
+          [2286, 404],
+          [2286, 427],
+          [2258, 450],
+          [2191, 468],
+          [2126, 557],
         ],
+        'cubic',
       ],
     ];
-    for (const [aName, bName, oneWay, bends] of links) {
+    for (const [aName, bName, oneWay, bends, curve] of links) {
       const a = byName(aName),
         b = byName(bName);
-      addSegment(lineId, a.id, b.id, [[a.x, a.y], ...bends, [b.x, b.y]], oneWay);
+      addSegment(lineId, a.id, b.id, [[a.x, a.y], ...bends, [b.x, b.y]], oneWay, curve);
     }
   }
   return {
@@ -261,6 +298,20 @@ function makeCity(input, id) {
     stations: [...stations.values()],
     lines: [...lines.values()],
     segments: [...segments.values()],
+    ...(id === 'shanghai'
+      ? {
+          sameLineTransfers: [
+            ['10号线', '龙柏新村', '龙溪路', '上海动物园'],
+            ['5号线', '金平路', '东川路', '江川路'],
+            ['11号线', '白银路', '嘉定新城', '上海赛车场'],
+          ].map(([line, a, interchange, b]) =>
+            [a, b].map(
+              (name) =>
+                `${id}-${line}:${[byName(name).id, byName(interchange).id].sort().join(':')}`,
+            ),
+          ),
+        }
+      : {}),
   };
 }
 fs.mkdirSync('src/data', { recursive: true });

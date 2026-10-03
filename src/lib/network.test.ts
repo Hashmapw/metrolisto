@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cities } from '../data';
-import { createNetwork, findRoute, searchStations } from './network';
+import { createNetwork, findRoute, routeGroups, searchStations } from './network';
 import { validateCity } from './validate';
 import exampleCity from '../../docs/city.example.json';
 
@@ -86,6 +86,42 @@ describe('complete city networks', () => {
 });
 
 describe('route finding', () => {
+  it('uses the single Dahongmen interchange between lines 8 and 10', () => {
+    expect(searchStations(bj, '大红门').filter((s) => s.name === '大红门')).toHaveLength(1);
+    const r = route(bj, '大红门南', '石榴庄');
+    expect(names(bj, r.stationIds)).toEqual(['大红门南', '大红门', '石榴庄']);
+    expect(names(bj, r.transferIds)).toEqual(['大红门']);
+    expect(
+      bj.stationLines
+        .get(id(bj, '大红门'))
+        ?.map((l) => l.name)
+        .sort(),
+    ).toEqual(['10号线', '8号线']);
+  });
+  it.each(['balanced', 'transfers'] as const)(
+    'counts branch changes with %s routing, without U-turn shortcuts',
+    (preference) => {
+      for (const [from, to] of [
+        ['上海动物园', '龙柏新村'],
+        ['龙柏新村', '上海动物园'],
+      ]) {
+        const r = findRoute(sh, id(sh, from), id(sh, to), [], preference)!;
+        expect(names(sh, r.stationIds)).toEqual([from, '龙溪路', to]);
+        expect(names(sh, r.transferIds)).toEqual(['龙溪路']);
+        expect(routeGroups(r)).toHaveLength(2);
+        expect(new Set(r.lineIds).size).toBe(1);
+      }
+    },
+  );
+  it('accepts a branch interchange as an explicit waypoint but keeps through trains direct', () => {
+    expect(searchStations(sh, '龙溪路', true)).toHaveLength(1);
+    expect(names(sh, route(sh, '上海动物园', '龙柏新村', ['龙溪路']).transferIds)).toEqual([
+      '龙溪路',
+    ]);
+    expect(route(sh, '上海动物园', '水城路').transferIds).toEqual([]);
+    expect(route(sh, '龙柏新村', '水城路').transferIds).toEqual([]);
+  });
+
   it('includes all intermediate stations of a direct trip', () => {
     const r = route(sh, '人民广场', '陆家嘴');
     expect(names(sh, r.stationIds)).toEqual(['人民广场', '南京东路', '陆家嘴']);
@@ -96,6 +132,14 @@ describe('route finding', () => {
     const r = route(sh, '闵行开发区', '奉贤新城');
     expect(names(sh, r.stationIds)).toContain('东川路');
     expect(r.lineIds.every((l) => l === 'shanghai-5号线')).toBe(true);
+    expect(names(sh, r.transferIds)).toEqual(['东川路']);
+  });
+  it('counts changes between line 11 branches without splitting through services', () => {
+    expect(names(sh, route(sh, '白银路', '上海赛车场').transferIds)).toEqual(['嘉定新城']);
+    expect(route(sh, '白银路', '马陆').transferIds).toEqual([]);
+    expect(route(sh, '上海赛车场', '马陆').transferIds).toEqual([]);
+    expect(route(sh, '莘庄', '金平路').transferIds).toEqual([]);
+    expect(route(sh, '莘庄', '江川路').transferIds).toEqual([]);
   });
   it('connects the ends of ring lines', () => {
     const r = route(bj, '巴沟', '火器营');

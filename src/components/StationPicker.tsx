@@ -72,7 +72,10 @@ export default function StationPicker({
           setQuery(e.target.value);
           setOpen(true);
           setActive(0);
-          if (value) onChange('');
+        }}
+        onBlur={() => {
+          setOpen(false);
+          setQuery('');
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -119,6 +122,7 @@ export default function StationPicker({
               <button
                 type="button"
                 role="option"
+                tabIndex={-1}
                 aria-selected={active === i}
                 id={`${listId}-${i}`}
                 className={active === i ? 'active' : ''}

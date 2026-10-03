@@ -19,13 +19,15 @@ export interface MetroLine {
   stationIds: string[];
 }
 
-/** Each physical section is explicit. Branches and loops require no special routing logic. */
+/** Each physical section is explicit; optional city rules describe same-line train changes. */
 export interface Segment {
   id: string;
   lineId: string;
   from: string;
   to: string;
   points?: Point[];
+  /** Interpret points as cubic Bézier control/control/end triples after the start. */
+  curve?: 'cubic';
   oneWay?: boolean;
 }
 
@@ -41,6 +43,8 @@ export interface CityData {
   stations: Station[];
   lines: MetroLine[];
   segments: Segment[];
+  /** Pairs of adjacent sections that require changing trains on the same line. */
+  sameLineTransfers?: [string, string][];
 }
 
 export interface Route {
@@ -59,6 +63,8 @@ export interface Journey extends Route {
 export interface SavedData {
   version: 1;
   cities: Record<string, Journey[]>;
+  /** Unusable source records are retained verbatim for recovery and export. */
+  quarantined?: { cityId: string; value: unknown; reason: string }[];
 }
 
 export interface StationState {

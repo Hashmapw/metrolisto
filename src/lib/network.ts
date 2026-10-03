@@ -27,18 +27,50 @@ export function createNetwork(city: CityData): Network {
   };
 }
 
+export function requiresTransfer(city: CityData, incoming: Segment | undefined, outgoing: Segment) {
+  return (
+    !!incoming &&
+    (incoming.lineId !== outgoing.lineId ||
+      (city.sameLineTransfers ?? []).some(
+        ([a, b]) =>
+          (incoming.id === a && outgoing.id === b) || (incoming.id === b && outgoing.id === a),
+      ))
+  );
+}
+
+export function isTransferStation(network: Network, id: string) {
+  return (
+    (network.stationLines.get(id)?.length ?? 0) > 1 ||
+    (network.city.sameLineTransfers ?? []).some(([a, b]) =>
+      [a, b].every((edgeId) => {
+        const edge = network.segmentById.get(edgeId)!;
+        return edge.from === id || edge.to === id;
+      }),
+    )
+  );
+}
+
+export function routeTransfers(city: CityData, route: Route) {
+  const edges = new Map(city.segments.map((edge) => [edge.id, edge]));
+  return route.stationIds.filter(
+    (_, i) =>
+      i > 0 &&
+      i < route.stationIds.length - 1 &&
+      requiresTransfer(city, edges.get(route.segmentIds[i - 1]), edges.get(route.segmentIds[i])!),
+  );
+}
+
 type Step = {
   key: string;
   station: string;
-  line: string;
   via: number;
   cost: number;
   previous?: Step;
   edge?: Segment;
 };
 
-/** Dijkstra over (station, incoming line, ordered transfer waypoint index).
- * A requested transfer station is satisfied only by changing lines there.
+/** Dijkstra over (station, incoming section, ordered transfer waypoint index).
+ * A requested transfer station is satisfied only by changing trains there.
  */
 export function findRoute(
   network: Network,
@@ -54,10 +86,10 @@ export function findRoute(
     via.includes(from) ||
     via.includes(to) ||
     new Set(via).size !== via.length ||
-    via.some((id) => (network.stationLines.get(id)?.length ?? 0) < 2)
+    via.some((id) => !isTransferStation(network, id))
   )
     return null;
-  const start: Step = { key: `${from}||0`, station: from, line: '', via: 0, cost: 0 };
+  const start: Step = { key: `${from}||0`, station: from, via: 0, cost: 0 };
   const costs = new Map([[start.key, 0]]),
     queue: Step[] = [start];
   const transferCost = preference === 'transfers' ? network.city.segments.length + 1 : 4;
@@ -78,26 +110,30 @@ export function findRoute(
         }
         step = step.previous;
       }
-      const transferIds = stationIds.filter(
-        (_, i) => i > 0 && i < stationIds.length - 1 && lineIds[i - 1] !== lineIds[i],
-      );
+      const transferIds = routeTransfers(network.city, {
+        stationIds,
+        segmentIds,
+        lineIds,
+        transferIds: [],
+      });
       return { stationIds, segmentIds, lineIds, transferIds };
     }
     for (const { to: next, segment } of network.adjacency.get(current.station) ?? []) {
-      const transfer = !!current.line && current.line !== segment.lineId;
+      // Reversing over the same section cannot bypass a branch change of train.
+      if (current.edge?.id === segment.id) continue;
+      const transfer = requiresTransfer(network.city, current.edge, segment);
       let nextVia = current.via;
       if (current.station === via[current.via]) {
         if (!transfer) continue;
         nextVia++;
       }
       const cost = current.cost + 1 + (transfer ? transferCost : 0);
-      const key = `${next}|${segment.lineId}|${nextVia}`;
+      const key = `${next}|${segment.id}|${nextVia}`;
       if (cost >= (costs.get(key) ?? Infinity)) continue;
       costs.set(key, cost);
       queue.push({
         key,
         station: next,
-        line: segment.lineId,
         via: nextVia,
         cost,
         previous: current,
@@ -112,7 +148,7 @@ export function searchStations(network: Network, query: string, transferOnly = f
   const normalized = query.toLowerCase().replace(/\s/g, '');
   return network.city.stations.filter(
     (s) =>
-      (!transferOnly || network.stationLines.get(s.id)!.length > 1) &&
+      (!transferOnly || isTransferStation(network, s.id)) &&
       (!normalized ||
         [s.name, s.en ?? '', ...(s.aliases ?? [])].some((v) =>
           v.toLowerCase().replace(/\s/g, '').includes(normalized),
@@ -130,7 +166,7 @@ export function routeGroups(route: Route) {
   }[] = [];
   route.lineIds.forEach((lineId, i) => {
     const last = groups.at(-1);
-    if (last?.lineId === lineId) {
+    if (last?.lineId === lineId && !route.transferIds.includes(route.stationIds[i])) {
       last.to = route.stationIds[i + 1];
       last.stops++;
       last.stationIds.push(route.stationIds[i + 1]);

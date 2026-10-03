@@ -30,6 +30,58 @@ const manual: Journey = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('persistent exploration history', () => {
+  it('isolates a stale section and an unknown city without blocking healthy history', () => {
+    const bad = {
+      ...journey,
+      id: 'stale',
+      segmentIds: ['removed-section', ...journey.segmentIds.slice(1)],
+    };
+    const raw = {
+      version: 1,
+      cities: { shanghai: [bad, manual], beijing: [], unavailable: [journey] },
+    };
+    const setItem = vi.fn();
+    vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(raw), setItem });
+    const { data, error } = readSavedData(cities);
+    expect(error).toBeNull();
+    expect(data.cities).toEqual({ shanghai: [manual], beijing: [] });
+    expect(data.quarantined).toEqual([
+      { cityId: 'shanghai', value: bad, reason: expect.any(String) },
+      { cityId: 'unavailable', value: [journey], reason: expect.any(String) },
+    ]);
+    expect(setItem).not.toHaveBeenCalled();
+    const updated = mergeBackups(data, { version: 1, cities: { shanghai: [journey] } });
+    expect(updated.cities.shanghai).toHaveLength(2);
+    expect(validateBackup(JSON.parse(JSON.stringify(updated)), cities, true)).toEqual(updated);
+    expect(mergeBackups(updated, validateBackup(raw, cities, true))).toEqual(updated);
+  });
+  it('isolates malformed and duplicate records while retaining each original value', () => {
+    const records = [null, 42, {}, manual, manual];
+    const recovered = validateBackup(
+      { version: 1, cities: { shanghai: records, beijing: 'broken' } },
+      cities,
+      true,
+    );
+    expect(recovered.cities.shanghai).toEqual([manual]);
+    expect(recovered.quarantined?.map((entry) => entry.value)).toEqual([
+      null,
+      42,
+      {},
+      manual,
+      'broken',
+    ]);
+    expect(() => validateBackup({ version: 99, cities: {} }, cities, true)).toThrow();
+  });
+  it('round-trips same-line branch transfers and counts them as transferred', () => {
+    const trip: Journey = { ...journey, ...findRoute(network, id('上海动物园'), id('龙柏新村'))! };
+    const data = { version: 1 as const, cities: { shanghai: [trip] } };
+    expect(validateBackup(data, cities)).toEqual(data);
+    expect(getProgress([trip]).stations.get(id('龙溪路'))?.transferred).toBe(true);
+    expect(() =>
+      validateBackup({ version: 1, cities: { shanghai: [{ ...trip, transferIds: [] }] } }, cities),
+    ).toThrow();
+  });
+
   it('merges repeated imports without depending on JSON object property order', () => {
     const current = { version: 1 as const, cities: { shanghai: [journey] } };
     const imported = validateBackup(

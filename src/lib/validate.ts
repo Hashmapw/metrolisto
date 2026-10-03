@@ -70,8 +70,29 @@ export function validateCity(value: unknown): CityData {
     if (![s.from, s.to].every((id) => line.stationIds.includes(id))) fail('区间端点不在线路中');
     if (s.points && (!Array.isArray(s.points) || s.points.length < 2 || !s.points.every(point)))
       fail('区间示意坐标无效');
+    if (
+      s.curve !== undefined &&
+      (s.curve !== 'cubic' || !s.points || s.points.length < 4 || (s.points.length - 1) % 3 !== 0)
+    )
+      fail('曲线需要起点及成组三个控制/终点坐标');
     if (s.oneWay !== undefined && typeof s.oneWay !== 'boolean') fail('oneWay 应为布尔值');
     segments.add(s.id);
+  }
+  if (city.sameLineTransfers !== undefined) {
+    if (!Array.isArray(city.sameLineTransfers)) fail('同线换乘规则无效');
+    for (const pair of city.sameLineTransfers) {
+      if (
+        !Array.isArray(pair) ||
+        pair.length !== 2 ||
+        pair[0] === pair[1] ||
+        pair.some((id) => !segments.has(id))
+      )
+        fail('同线换乘区间引用无效');
+      const a = city.segments.find((s) => s.id === pair[0])!;
+      const b = city.segments.find((s) => s.id === pair[1])!;
+      if (a.lineId !== b.lineId || ![a.from, a.to].some((id) => id === b.from || id === b.to))
+        fail('同线换乘区间必须同线相邻');
+    }
   }
   for (const source of city.sources)
     if (
