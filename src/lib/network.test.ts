@@ -128,11 +128,28 @@ describe('Shenzhen and Guangzhou topology', () => {
     });
     const trip = route(line3, '天河客运站', '机场北(T2)');
     expect(names(line3, trip.stationIds)).toContain('体育西路');
-    expect(trip.transferIds).toHaveLength(0);
+    expect(names(line3, trip.transferIds)).toEqual(['体育西路']);
     expect(gz.city.stations.some((s) => localisedName(s, 'zh-CN') === '机场南(1号航站楼)')).toBe(
       false,
     );
     expect(names(gz, route(gz, '高增', '机场北(T2)').stationIds)).toEqual(['高增', '机场北(T2)']);
+  });
+  it.each([
+    ['石牌桥', '林和西', ['体育西路']],
+    ['珠江新城', '林和西', []],
+    ['珠江新城', '石牌桥', []],
+  ] as const)('counts Guangzhou line 3 train changes from %s to %s', (from, to, transfers) => {
+    for (const [start, end] of [
+      [from, to],
+      [to, from],
+    ]) {
+      const trip = route(gz, start, end);
+      expect(names(gz, trip.stationIds)).toEqual([start, '体育西路', end]);
+      expect(names(gz, trip.transferIds)).toEqual(transfers);
+      const groups = routeGroups(trip);
+      expect(groups).toHaveLength(transfers.length + 1);
+      expect(groups.every((group) => group.lineId === 'guangzhou-3号线')).toBe(true);
+    }
   });
   it('closes Guangzhou line 11 and connects the Foshan networks', () => {
     expect(route(gz, '大塘', '龙潭').lineIds).toEqual(['guangzhou-11号线']);
